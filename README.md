@@ -68,4 +68,6 @@ draw_from_df('cpcn.dfp', weight='C1', color_sign=-1)
 #Custom colors
 draw_from_df('cpcn.dfp', weight='C1', color_sign=('red', 'gold'))
 ```
+### Tutorial
+In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes
 
