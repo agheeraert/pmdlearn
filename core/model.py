@@ -23,8 +23,6 @@ class Model():
     def scatter_dataframe(self, X_new):
         self.X_new = X_new
         self.n_components = X_new.shape[1]
-        print(list(enumerate(X_new.T)))
-        print(self.labels)
         df = pd.DataFrame({'C{}'.format(i+1): component
                            for i, component in enumerate(X_new.T)})
         df['labels'] = self.labels
