@@ -3,7 +3,7 @@ from MDAnalysis.analysis import align
 from MDAnalysis.analysis.dihedrals import Ramachandran
 from MDAnalysis.lib.distances import capped_distance, self_capped_distance
 import numpy as np
-from features import Features, MultiFeatures
+from .features import Features, MultiFeatures
 from tqdm import tqdm
 from scipy.sparse import coo_matrix
 

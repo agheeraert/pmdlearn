@@ -8,7 +8,7 @@ from scipy.special import digamma
 from scipy.stats import entropy
 from scipy.sparse import coo_matrix
 from tqdm import tqdm
-from model import Model
+from .model import Model
 
 class Features():
     """General purpose class handling all features
