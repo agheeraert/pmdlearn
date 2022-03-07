@@ -1,5 +1,3 @@
-import enum
-from msilib.schema import Component
 from sklearn.decomposition import PCA, SparsePCA
 import seaborn as sns
 import pandas as pd
