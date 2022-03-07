@@ -1,3 +1,4 @@
+import enum
 from sklearn.decomposition import PCA, SparsePCA
 import seaborn as sns
 import pandas as pd
@@ -23,9 +24,8 @@ class Model():
     def scatter_dataframe(self, X_new):
         self.X_new = X_new
         self.n_components = X_new.shape[1]
-        print(self.X_new, self.n_components)
         df = pd.DataFrame({'{}{}'.format(i+1): X_new[:, i]
-                           for i in range(self.n_components)})
+                           for i in enumerate(X_new.T)})
         df['labels'] = self.labels
         self.dataframe = df
 
