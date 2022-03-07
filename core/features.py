@@ -168,6 +168,20 @@ class Features():
     def save(self, output):
         pkl.dump(self, open(output, 'wb'))
 
+    def mapping(self, dic):
+        """Relabels indexes based on a dictionnary or residue list
+        Parameters:
+        dic: dictionary or list,
+        Contains new labels elements. If dictionary provides older labels.
+        If list is mapped to consecutive integers"""
+        if isinstance(dic, list):
+            dic = dict(enumerate(dic))
+        U, inv = np.unique(self.indices, return_inverse=True)
+        # Translates atomic contact information in residue contact info
+        self.indices = np.array([dic[x] 
+                                for x in U])[inv].reshape(self.indices.shape)
+
+
 
 class MultiFeatures(Features):
     """General purpose class handling multiple features per node or set of

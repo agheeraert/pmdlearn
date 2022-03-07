@@ -6,6 +6,8 @@ import numpy as np
 from .features import Features, MultiFeatures
 from tqdm import tqdm
 from scipy.sparse import coo_matrix
+import pandas as pd
+import string
 
 
 class MDFeaturizer():
@@ -286,3 +288,28 @@ class MDFeaturizer():
         pairs = np.sort(pairs, axis=1)
         pairs = np.unique(pairs, axis=1)
         return pairs
+
+    def get_reslist(self, selection="protein", chain_labels=None):
+        """Creates list of residues of the trajectory
+        Parameters: 
+
+        selection: str, default="protein"
+        Selection to consider as "residues". Uses MDAnalysis selection commands.
+        Default is taking the full protein
+        
+        chain_labels: tuple of str or None
+        Custom label for chains. Appended at the end. Default is A,B,C,...
+        """
+        reslist = list(self.universe.select_atoms(selection).residues)
+        resnames = np.array([res.resname for res in reslist])
+        resids = np.array([res.resid for res in reslist])
+        segids = np.array([res.segid for res in reslist])
+        unique_chains = pd.unique(np.array([res.segid for res in reslist]))
+
+        if chain_labels is None:
+            chain_labels = list(string.ascii_uppercase)[:len(unique_chains)]
+        seg2lab = dict(zip(unique_chains, chain_labels))
+        # Crushing older segid
+        segids = np.array([seg2lab[res] for res in segids])
+        return ['{}{}:{}'.format(resn, resi, seg) 
+                for resn, resi, seg in zip(resnames, resids, segids)]
