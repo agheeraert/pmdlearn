@@ -66,6 +66,6 @@ draw_from_df('cpcn.dfp', weight='C1', color_sign=1)
 #Inverted colors
 draw_from_df('cpcn.dfp', weight='C1', color_sign=-1)
 #Custom colors
-draw_from_df('cpcn.dfp', weight='C1', color_sign=('red', 'gold')
+draw_from_df('cpcn.dfp', weight='C1', color_sign=('red', 'gold'))
 ```
 
