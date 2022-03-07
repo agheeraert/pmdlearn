@@ -25,12 +25,12 @@ class Model():
         self.n_components = X_new.shape[1]
         print(list(enumerate(X_new.T)))
         print(self.labels)
-        df = pd.DataFrame({'{}{}'.format(i+1): component
+        df = pd.DataFrame({'C{}'.format(i+1): component
                            for i, component in enumerate(X_new.T)})
         df['labels'] = self.labels
         self.dataframe = df
 
-    def scatterplot(self, ax, x='c1', y='c2', **kwargs):
+    def scatterplot(self, ax, x='C1', y='C2', **kwargs):
         try:
             sns.kdeplot(data=self.dataframe, x=x, y=y, hue=self.labels, ax=ax,
                     common_norm=False, **kwargs)
@@ -63,7 +63,7 @@ class Model():
         else:
             dic_labels = {'node{}'.format(i+1): self.indices[:, i]
                                for i in range(self.indices.shape[1])}
-        dic_compo = {'c{}'.format(i+1): elt for i, elt in enumerate(c)}
+        dic_compo = {'C{}'.format(i+1): elt for i, elt in enumerate(c)}
         dic_labels.update(dic_compo)
         df = pd.DataFrame(dic_labels)
         return df
@@ -128,8 +128,8 @@ class Model():
             self.percentage_cluster.append(perc_dict)
             i += 1
         # ax.set_aspect('equal')
-        ax.set_xlabel('c1')
-        ax.set_ylabel('c2')
+        ax.set_xlabel('C1')
+        ax.set_ylabel('C2')
         ax.grid('--')
         ax.legend(handles=m, loc='best', numpoints=1, ncol=2)
         if return_labels:
