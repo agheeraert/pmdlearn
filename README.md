@@ -68,6 +68,12 @@ draw_from_df('cpcn.dfp', weight='C1', color_sign=-1)
 #Custom colors
 draw_from_df('cpcn.dfp', weight='C1', color_sign=('red', 'gold'))
 ```
+A minimal working example is found in the vizualization folder try
+```bash
+cd vizualization
+pymol example.py
+```
+
 ### Tutorial
 In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes
 

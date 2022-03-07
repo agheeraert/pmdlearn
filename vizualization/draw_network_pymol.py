@@ -246,7 +246,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
         weight = '{}-{}'.format(w2, w1)
         df[weight] = df[w2] - df[w1]
     df = df.loc[df[weight] != 0]
-    print(nodes_df)
     if not all(node in nodes for node in nodes_df):
         if auto_patch:
             nodes = _auto_patch(nodes, nodes_df)
@@ -254,10 +253,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
             notin = [node for node in nodes_df if node not in nodes]
             loc = (df['node1'].isin(notin)) | (df['node2'].isin(notin))
             df = df.loc[~loc]
-    print(df)
     node2CA = dict(zip(nodes, stored.posCA))
 
-#    print(df, node2CA)
 
     #Color by attribute
     if color_by !=None:
@@ -324,7 +321,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
         G = nx.compose_all([G.subgraph(nx.node_connected_component(G, node)) for node in induced if node in G.nodes()])
         df = nx.to_pandas_edgelist(G, target='node1', source='node2')
         print(list(G.nodes()))
-
 
     if group_compo:
         net = nx.from_pandas_edgelist(df, source="node1", target="node2", edge_attr=True)
