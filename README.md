@@ -50,7 +50,7 @@ influences.to_pickle('cpcn.dfp')
 ### Vizualization
 With PyMOL, add to your .pymolrc
 ```bash
-echo run /path/to/pmdlearn/vizualization/draw_network_pymol.py
+echo "run /path/to/pmdlearn/vizualization/draw_network_pymol.py" >> .pymolrc
 ```
 Then in PyMOL to draw a Amino Acid Network (AAN)
 ```python
