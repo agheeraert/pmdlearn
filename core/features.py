@@ -94,18 +94,13 @@ class Features():
                 indices = self.indices
                 values = np.concatenate([v1, v2], axis=0)
         else:
-            dic1 = {i: ix for i, ix in enumerate(self.indices.T)}
-            dic2 = {i: ix for i, ix in enumerate(other.indices.T)}
-            df = pd.DataFrame(dic1).reset_index()
-            df = df.merge(pd.DataFrame(dic2).reset_index(), how='outer', 
-                          on=list(range(len(dic1))))
+            all_indices = np.concatenate([self.indices, other.indices], axis=0)
+            indices, inv = np.unique(all_indices, return_inverse=True,
+                                     axis=0)
             values = np.zeros((v1.shape[0] + v2.shape[0],
-                               df.shape[0]))
-            ix1 = np.where(~df['index_x'].isna())[0]
-            ix2 = np.where(~df['index_y'].isna())[0]
-            values[:self.n_samples, ix1] = v1
-            values[self.n_samples:, ix2] = v2
-            indices = np.array(df[list(range(len(dic1)))].values)
+                              indices.shape[0]))
+            values[:self.n_samples, inv[:self.n_features]] = v1
+            values[self.n_samples:, inv[self.n_features:]] = v2
         return self.__class__(values, indices, name, labels, replica,
                               samples_per_label=spl)
 
