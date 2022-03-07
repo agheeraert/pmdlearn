@@ -23,12 +23,13 @@ class Model():
     def scatter_dataframe(self, X_new):
         self.X_new = X_new
         self.n_components = X_new.shape[1]
+        print(self.X_new, self.n_components)
         df = pd.DataFrame({'{}{}'.format(i+1): X_new[:, i]
                            for i in range(self.n_components)})
         df['labels'] = self.labels
         self.dataframe = df
 
-    def scatter_plot(self, ax, x='c1', y='c2', **kwargs):
+    def scatterplot(self, ax, x='c1', y='c2', **kwargs):
         try:
             sns.kdeplot(data=self.dataframe, x=x, y=y, hue=self.labels, ax=ax,
                     common_norm=False, **kwargs)
