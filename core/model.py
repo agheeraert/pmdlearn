@@ -28,7 +28,9 @@ class Model():
         df['labels'] = self.labels
         self.dataframe = df
 
-    def scatterplot(self, ax, x='C1', y='C2', **kwargs):
+    def scatterplot(self, ax=None, x='C1', y='C2', **kwargs):
+        if ax is None:
+            fig, ax = plt.subplots(1, 1)
         try:
             sns.kdeplot(data=self.dataframe, x=x, y=y, hue=self.labels, ax=ax,
                     common_norm=False, **kwargs)
