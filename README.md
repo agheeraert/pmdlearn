@@ -3,21 +3,20 @@ Protein Molecular Dynamics LEARNing
 
 ## Installation
 ### Cloning the repository
-If using conda, you should cd in your site-packages directory prior e.g.
+If using conda, go in your conda site-packages directory e.g.
 ```bash 
 cd ~/anaconda3/lib/python3.7/site-packages
 ```
-Then  clone the repo
+Then clone the repository:
 ```bash
 git clone https://github.com/agheeraert/pmdlearn.git
 ```
-### Add module to your python path (without using conda)
-Without conda
+### Add module to your python path (without conda)
 ```bash
 echo "export PYTHONPATH=$PYTHONPATH:$(pwd)/pmdlearn" >> ~/.bashrc
 ```
 ### Getting started
-Open python
+In python you can check that the module is correctly installed
 ```python
 from pmdlearn import Model, MDFeaturizer, Features, MultiFeatures
 ```
@@ -48,9 +47,9 @@ influences = cPCA.get_influences()
 influences.to_pickle('cpcn.dfp')
 ```
 ### Vizualization
-With PyMOL, add to your .pymolrc
+Add to your .pymolrc the vizualization script: 
 ```bash
-echo "run /path/to/pmdlearn/vizualization/draw_network_pymol.py" >> .pymolrc
+echo "run /path/to/pmdlearn/vizualization/draw_network_pymol.py" >> ~/.pymolrc
 ```
 Then in PyMOL to draw a Amino Acid Network (AAN)
 ```python
@@ -63,12 +62,12 @@ draw_from_df('dpcn.dfp', w2='holo', w1='apo', color_sign=1)
 Or a Principal Component Network
 ```python
 draw_from_df('cpcn.dfp', weight='C1', color_sign=1)
-#Inverted colors
+# Inverted colors
 draw_from_df('cpcn.dfp', weight='C1', color_sign=-1)
-#Custom colors
+# Custom colors
 draw_from_df('cpcn.dfp', weight='C1', color_sign=('red', 'gold'))
 ```
-A minimal working example is found in the vizualization folder try
+A minimal working example is found in the vizualization folder. Try it with:
 ```bash
 cd vizualization
 pymol example.py
