@@ -1,3 +1,4 @@
+from enum import unique
 import MDAnalysis as mda
 from MDAnalysis.analysis import align
 from MDAnalysis.analysis.dihedrals import Ramachandran
@@ -8,6 +9,7 @@ from tqdm import tqdm
 from scipy.sparse import coo_matrix
 import pandas as pd
 import string
+import multiprocessing as mp
 
 
 class MDFeaturizer():
@@ -110,7 +112,8 @@ class MDFeaturizer():
                           self.replica, descriptor_labels=descriptor_labels)
 
     def contacts(self, selection="not name H*", selection2=None, cutoff=5.,
-                 prevalence=None, expected=False, entangled=False):
+                 prevalence=None, expected=False, entangled=False, 
+                 parallel=False):
         """Featurize contacts
 
         Parameters:
@@ -137,6 +140,10 @@ class MDFeaturizer():
         Computes an entangled contact network model (i.e. backbone and 
         sidechain) are separated. Experimental.
 
+        parallel: bool or int, default=False
+        If 0 or 1, runs a sequential script. If int > 1, runs a parallel 
+        script
+
         """
 
         self.cutoff = cutoff
@@ -159,34 +166,63 @@ class MDFeaturizer():
         # Gets first selection and its indexing in the protein
         self.s1 = self.universe.select_atoms(selection)
         self.ix1 = np.array(self.s1.atoms.indices)
+
         # If a second selection: retrieves and indexes it
         if selection2 is not None:
             self.s2 = self.universe.select_atoms(selection2)
             self.ix2 = np.array(self.s2.atoms.indices)
 
         res1, res2, data, times = list(), list(), list(), list()
-
+        
         # Iterates over frames to compute contacts
-        for _t, ts in enumerate(tqdm(self.universe.trajectory[self.slice])):
-            if selection2 is None:
-                pairs = self._contacts_sym()
-            else:
-                pairs = self._contacts_asym()
-            U, inv = np.unique(pairs, return_inverse=True)
-            # Translates atomic contact information in residue contact info
-            pairs_res = np.array(
-                [self.atom2res[x] for x in U])[inv].reshape(pairs.shape)
-            unique_pairs, counts = np.unique(pairs_res, axis=1,
-                                             return_counts=True)
-            # Stores information in four different lists
-            res1.append(unique_pairs[0])
-            res2.append(unique_pairs[1])
-            data.append(counts)  # Number of contact
-            times.append(np.array(
-                [_t]*unique_pairs.shape[1]))  # Timestep
+        if int(parallel) <= 1:
+            for _t, ts in enumerate(tqdm(self.universe.trajectory[self.slice])):
+                if selection2 is None:
+                    pairs = self._contacts_sym()
+                else:
+                    pairs = self._contacts_asym()
+                U, inv = np.unique(pairs, return_inverse=True)
+                # Translates atomic contact info in residue contact info
+                pairs_res = np.array(
+                    [self.atom2res[x] for x in U])[inv].reshape(pairs.shape)
+                unique_pairs, counts = np.unique(pairs_res, axis=1,
+                                                return_counts=True)
+                # Stores information in four different lists
+                res1.append(unique_pairs[0])
+                res2.append(unique_pairs[1])
+                data.append(counts)  # Number of contact
+                times.append(np.array(
+                    [_t]*unique_pairs.shape[1]))  # Timestep
+        else:
+            # Checking cpu number to avoid creating too many processes
+            n_cpu = min(mp.cpu_count(), parallel)
+            with mp.Manager() as manager:
+                shared_data = manager.list()
+                processes = []
+                for _t, ts in enumerate(tqdm(self.universe.trajectory[self.slice])):
+                    if selection2 is None:
+                        p = mp.Process(target=self._contacts_sym_parallel, 
+                                       args=(shared_data, self.s1.positions,_t,))                    
+                    else:
+                        p = mp.Process(target=self._contacts_asym_parallel, 
+                                       args=(shared_data, 
+                                             self.s1.positions, 
+                                             self.s2.positions, 
+                                             _t,))
+                    p.start()
+                    processes.append(p)
 
-        res1, res2, data, times = [np.concatenate(arr) for arr in
+                for p in processes:
+                    p.join()
+                res1 = [t[0] for t in shared_data]
+                res2 = [t[1] for t in shared_data]
+                data = [t[2] for t in shared_data]
+                times = [t[3] for t in shared_data]
+
+
+        res1, res2, data, times = [np.concatenate(arr) for arr in 
                                    [res1, res2, data, times]]
+
         contacts = np.stack([res1, res2], axis=-1)
 
         # Removing intraresidual contacts
@@ -288,6 +324,36 @@ class MDFeaturizer():
         pairs = np.sort(pairs, axis=1)
         pairs = np.unique(pairs, axis=1)
         return pairs
+
+    def _contacts_sym_parallel(self, shared_data, pos, t):
+        """Uses built-in MDAnalysis function to get interacting pairs in
+        symmetric selection with parallel algrithm"""
+        pairs = self_capped_distance(pos, self.cutoff, 
+                                    return_distances=False)
+        self._parallel_append(shared_data, np.sort(self.ix1[pairs], axis=1).T, t)
+
+    def _contacts_asym_parallel(self, shared_data, pos1, pos2, t):
+        pairs = capped_distance(pos1, pos2,
+                                self.cutoff, return_distances=False)
+        pairs = np.stack([self.ix1[pairs[:, 0]], self.ix2[pairs[:, 1]]])
+        # Removing duplicates
+        pairs = np.sort(pairs, axis=1)
+        pairs = np.unique(pairs, axis=1)
+
+        self._parallel_append(shared_data, pairs, t)
+
+    def _parallel_append(self, shared_data, pairs, t):
+        U, inv = np.unique(pairs, return_inverse=True)
+        # Translates atomic contact info in residue contact info
+        pairs_res = np.array(
+            [self.atom2res[x] for x in U])[inv].reshape(pairs.shape)
+        unique_pairs, counts = np.unique(pairs_res, axis=1,
+                                        return_counts=True)
+        shared_data.append((unique_pairs[0], 
+                     unique_pairs[1], 
+                     counts, 
+                     np.array([t]*unique_pairs.shape[1])))
+
 
     def get_reslist(self, selection="protein", chain_labels=None):
         """Creates list of residues of the trajectory
