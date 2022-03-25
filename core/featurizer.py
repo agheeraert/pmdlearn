@@ -1,4 +1,3 @@
-from enum import unique
 import MDAnalysis as mda
 from MDAnalysis.analysis import align
 from MDAnalysis.analysis.dihedrals import Ramachandran
