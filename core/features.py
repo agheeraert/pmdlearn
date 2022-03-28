@@ -1,3 +1,4 @@
+from operator import sub
 import numpy as np
 import warnings
 import pandas as pd
@@ -9,6 +10,7 @@ from scipy.stats import entropy
 from scipy.sparse import coo_matrix
 from tqdm import tqdm
 from .model import Model
+from itertools import combinations_with_replacement as cwr
 
 class Features():
     """General purpose class handling all features
@@ -296,11 +298,11 @@ class MultiFeatures(Features):
         self.values = self.values.reshape(self.n_samples, -1)
         self.descriptor_labels = descriptor_labels
 
-    def _get_mutual_information(self, estimator='gaussian',
-                                by=['label', 'replica']):
+    def _get_mutual_information(self, estimator='gaussian', by='label', 
+                                subset=None):
         """Computes mutual information between all nodes or set of nodes in 
         for each simulation."""
-        mutual_information = {}
+        MI = {}
 
         # Separates the computation for each simulation
         if type(by) != list:
@@ -313,28 +315,34 @@ class MultiFeatures(Features):
 
             for label in pd.unique(labels):
                 ix = np.where(np.array(labels, dtype=object) == label)[0]
-                v = self.values_3d[ix]
+                values = self.values_3d[ix]
                 # Dispatches the correlation computation between different 
                 # estimators
                 if estimator == 'gaussian':
-                    mutual_information[label] = self._gaussian_estimator(v)
+                    MI[label] = self._gaussian_estimator(values=values, 
+                                                         subset=subset)
                 elif estimator == 'histogram':
-                    mutual_information[label] = self._histogram_estimator(v)
+                    MI[label] = self._histogram_estimator(values=values, 
+                                                          subset=subset)
                 elif estimator[1:4] == 'knn':
                     # Knn estimator has 2 other arguments, the number of nn
                     # and the precise estimator used (1 or 2)
                     k = int(estimator[0])
                     if len(estimator) <= 4:
-                        e = 1
+                        estimate = 1
                     else:
-                        e = int(estimator[4])
-                    mutual_information[label] = self._knn_estimator(v, k, e)
+                        estimate = int(estimator[4])
+                    MI[label] = self._knn_estimator(values=values, 
+                                                    k=k, 
+                                                    estimate=estimate, 
+                                                    subset=subset)
 
-        return mutual_information
+        return MI
 
-    def _histogram_estimator(self, values, bins=None):
+    def _histogram_estimator(self, values, bins=None, subset=None):
         """Basic histogram estimator to evaluate mutual information. Usually
         has terrible performance and accuracy."""
+
         if bins is None:
             bins = tuple([int(np.sqrt(values.shape[0]/5))])*self.n_descriptors
         
@@ -346,17 +354,23 @@ class MultiFeatures(Features):
                              for row in probabilities])
         
         j_entropies = np.zeros((self.n_features, self.n_features))
-        for i in tqdm(list(range(self.n_features))):
-            for j in range(i, self.n_features):
-                probs = np.histogramdd(np.concatenate([values[:, i, :],
-                                                      values[:, j, :]], 
-                                                      axis=-1))[0].flatten()
-                j_entropies[[i, j], [j, i]] = entropy(probs)
+
+        if subset is None:
+            iterator = list(cwr(range(self.n_features), 2))
+        else:
+            iterator = subset
+
+        for ij in tqdm(iterator):
+            i, j = ij
+            probs = np.histogramdd(np.concatenate([values[:, i, :],
+                                                    values[:, j, :]], 
+                                                    axis=-1))[0].flatten()
+            j_entropies[[i, j], [j, i]] = entropy(probs)
         mutual_information = np.add.outer(entropies, entropies)
         mutual_information -= j_entropies
         return mutual_information
     
-    def _gaussian_estimator(self, values):
+    def _gaussian_estimator(self, values, subset=None):
         """Gaussian estimator to evaluate mutual information. Finds orthogonal
         correlation but remains a linear estimator. Rapid performance but 
         incomplete."""
@@ -366,7 +380,11 @@ class MultiFeatures(Features):
         det = np.log(np.linalg.det(Sx))
         HxHy = np.add.outer(det, det)
         Hxy = np.zeros_like(HxHy)
-        for i in tqdm(list(range(0, self.n_features))):
+        if subset is None:
+            iterator = list(cwr(range(self.n_features), 2))
+        else:
+            iterator = subset
+        for i in tqdm(iterator):
             for j in range(i+1, self.n_features):
                 covs = np.cov(np.concatenate([values[:, i, :],
                                               values[:, j, :]],
@@ -377,7 +395,8 @@ class MultiFeatures(Features):
         Hxy = np.log(Hxy)
         return 1/2*(HxHy - Hxy)
 
-    def _knn_estimator(self, values, k=5, estimate=1, correction=True):
+    def _knn_estimator(self, values, k=5, estimate=1, correction=True, 
+                       subset=None):
         """Knn estimator to evaluate mutual information. Is intrinsically 
         non-linear but has long computation time."""
 
@@ -393,19 +412,25 @@ class MultiFeatures(Features):
         #Initializing mutual information
         mutual_information = np.ones((self.n_features, self.n_features))
         mutual_information *= digamma(k) + digamma(values.shape[0]) + const
-        for i in tqdm(list(range(0, self.n_features))):
-            for j in range(i, self.n_features):
-                x = values[:, i, :]
-                y = values[:, j, :]
-                points = np.concatenate([x, y], axis=1)
-                # Building KDTree with max norm metric
-                tree = KDTree(points, metric='chebyshev')
-                # Adding an offset to not count self as nearest neighbor
-                e = tree.query(points, k=k+1)[0][:, k]
-                digamma_nxny = (digamma_n(x, e, offset=offset) +
-                                digamma_n(y, e, offset=offset))
-                digamma_nxny = digamma_nxny[np.isfinite(digamma_nxny)]
-                mutual_information[[i, j], [j, i]] -= np.average(digamma_nxny)
+
+        if subset is None:
+            iterator = list(cwr(range(self.n_features), 2))
+        else:
+            iterator = subset
+
+        for ij in tqdm(iterator):
+            i, j = ij
+            x = values[:, i, :]
+            y = values[:, j, :]
+            points = np.concatenate([x, y], axis=1)
+            # Building KDTree with max norm metric
+            tree = KDTree(points, metric='chebyshev')
+            # Adding an offset to not count self as nearest neighbor
+            e = tree.query(points, k=k+1)[0][:, k]
+            digamma_nxny = (digamma_n(x, e, offset=offset) +
+                            digamma_n(y, e, offset=offset))
+            digamma_nxny = digamma_nxny[np.isfinite(digamma_nxny)]
+            mutual_information[[i, j], [j, i]] -= np.average(digamma_nxny)
                 # print(mutual_information[i, j])
         if correction:
             mutual_information -= np.min(mutual_information)
@@ -417,7 +442,13 @@ class MultiFeatures(Features):
                                             **kwargs):
         """Computes generalized correlation coefficient"""
         if mutual_information is None:
-            mutual_information = self._get_mutual_information(**kwargs)
+            if cmatrix is None:
+                mutual_information = self._get_mutual_information(**kwargs)
+            else:
+                nnz = [(i, j) for i, j in zip(*cmatrix.nonzero())]
+                
+                mutual_information = self._get_mutual_information(subset=nnz,
+                                                                    **kwargs)
         df = None
         for label, MI in mutual_information.items():
             rMI = np.sqrt(1-np.exp(-2*MI/(self.n_descriptors)))
