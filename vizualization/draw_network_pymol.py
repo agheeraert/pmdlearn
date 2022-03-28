@@ -47,8 +47,8 @@ def create_topmat(sele, top, map_indexes, map_residues):
         topmat[map_indexes[id], map_residues[id]] = 1
     return topmat
 
-def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, smaller_max=False):
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
+def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, smaller_max=False, color_compo=False):
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=True)
     net.remove_nodes_from(list(nx.isolates(net)))
     edge_list = sorted(net.edges(data=True), key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
     connected_components = [[nx.number_connected_components(net), 0]]
@@ -66,20 +66,21 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, sma
     else:
         threshold = connected_components[-m, 1]
     df = df.loc[df[weight].abs() > threshold]
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=True)
     components_list = [net.subgraph(c).copy() for c in nx.connected_components(net)] 
     if cut_diam > 0:
         robust = [list(c.nodes()) for c in components_list if nx.diameter(c)>=float(cut_diam)]
         net = net.subgraph([x for robust in list(robust) for x in robust])
     components_list = [net.subgraph(c).copy() for c in nx.connected_components(net)] 
-    df = nx.to_pandas_edgelist(net, source='source', target='target')
+    df = nx.to_pandas_edgelist(net, source='node1', target='node2')
     vps = [np.max(np.abs(list(nx.get_edge_attributes(c, weight).values()))) for c in components_list]
     ranking = np.argsort(vps)[::-1]
-    node2compo = {}
-    for i, color in zip(ranking, sns.color_palette("bright", len(ranking))):
-        for a in components_list[i]:
-            node2compo[a] = color
-    df['color'] = df['node1'].map(node2compo)
+    if color_compo:
+        node2compo = {}
+        for i, color in zip(ranking, sns.color_palette("bright", len(ranking))):
+            for a in components_list[i]:
+                node2compo[a] = color
+        df['color'] = df['node1'].map(node2compo)
     return df
 
 
@@ -172,7 +173,7 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None, sele2=None
 def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75), r=1, 
                 edge_norm=None, weight='weight', w1=None, w2=None, keep_previous=False, auto_patch=True, label='', threshold=None, labeling=None, 
                 keep_interfaces=False, save_df=False, cmap_out=None, topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
-                reset_view=True, samewidth=False, induced=None, group_compo=False):
+                reset_view=True, samewidth=False, induced=None, group_compo=False, color_compo=False):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -257,7 +258,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
 
 
     #Color by attribute
-    if color_by !=None:
+    if color_by is not None:
         attributes = pd.unique(df[color_by])
         n_colors = len(attributes)
         if color_by_list:
@@ -302,7 +303,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
     if topk:
         df = df.loc[df[weight].abs().sort_values(ascending=False).head(n=topk).index]
     if cca:
-        df = get_cca(df, weight, smaller_max=smaller_max)
+        df = get_cca(df, weight, smaller_max=smaller_max, color_compo=color_compo)
     
     if keep_interfaces:
         if type(keep_interfaces) == list:
@@ -329,7 +330,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
         for i, l in compo.items():
             ix = np.where(df['node1'].isin(l))[0]
             components[ix] = i+1
-        df['component'] = components
+        df['component'] = ['C{}'.format(int(i)) for i in components]
         group_by = 'component'
             
 
