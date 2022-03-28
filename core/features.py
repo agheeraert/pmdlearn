@@ -105,8 +105,26 @@ class Features():
                               samples_per_label=spl)
 
 
-    def ca(self, kind=PCA, by='replica', **kwargs):
-        ca_obj = Model(kind, **kwargs)
+    def ca(self, kind=PCA, by='label', n_components=2, **kwargs):
+        """Performs different kinds of component analysis (decomposition)
+        using scikit-learn classes
+
+        Parameters
+        ----------
+        kind: class, default=PCA 
+        sklearn.decomposition class which does the component analysis
+
+        by: string, default='label'
+        Can be either 'label' or 'replica' to label columns of the component
+        analysis by system (='label') or by replica (='replica')
+
+        n_components: int, default=2
+        Number of final components in the component analysis
+
+        **kwargs, other kwargs to pass to the class builder. Depends on each
+        sklearn.decomposition class
+        """
+        ca_obj = Model(kind, n_components=n_components, **kwargs)
         ca_obj.add_labels_features(self._get_labels(by=by), self.indices)
         if kind == TruncatedSVD:
             X_new = ca_obj.ca.fit_transform(coo_matrix(self.values))
@@ -133,7 +151,32 @@ class Features():
                 Y.extend([elt]*nf)
         return Y
 
-    def average(self, by=['replica', 'label'], weights=None):
+    def average(self, by=['replica', 'label'], weights=None, frequency=False):
+        """Computes and returns the dynamical contact network
+
+        Parameters
+        ----------
+        by, str of list of str, default=['replica', 'label']
+        Either 'replica' and/or 'label'. Computes the frequency for each
+        replica (='replica') and/or system(='label')
+
+        weights, array_like or None, default=None
+        An array of weights associated with the values in a. Each value in a
+        contributes to the average according to its associated weight. The 
+        weights array can either be 1-D (in which case its length must be the
+        size of a along the given axis) or of the same shape as a. 
+        If weights=None, then all data in a are assumed to have a weight equal
+        to one. 
+
+        frequency, bool, default=False
+        If frequency=True returns a frequency network instead of the average 
+        network
+
+        Output
+        ----------
+        df, pandas.DataFrame
+        DataFrame representing the dynamical network
+        """
         if self.__class__ == MultiFeatures:
             warnings.WarningMessage('Average is not implemented for\
                                      MultiFeatures class. Might work\
@@ -161,8 +204,13 @@ class Features():
                     w = weights[ix]
                 else:
                     w = None
-                _values = np.average(self.values[ix], axis=0, weights=w)
-                df[label] = _values
+                if frequency:
+                    values = np.zeros_like(self.values[ix])
+                    values[self.values[ix].nonzero()] = 1
+                else:
+                    values = self.values[ix]
+                avg = np.average(values, axis=0, weights=w)
+                df[label] = avg
         return df
 
     def save(self, output):
@@ -170,10 +218,13 @@ class Features():
 
     def mapping(self, dic):
         """Relabels indexes based on a dictionnary or residue list
-        Parameters:
+
+        Parameters
+        ----------
         dic: dictionary or list,
         Contains new labels elements. If dictionary provides older labels.
-        If list is mapped to consecutive integers"""
+        If list is mapped to consecutive integers
+        """
         if isinstance(dic, list):
             dic = dict(enumerate(dic))
         U, inv = np.unique(self.indices, return_inverse=True)
