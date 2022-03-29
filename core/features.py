@@ -10,6 +10,7 @@ from scipy.stats import entropy
 from scipy.sparse import coo_matrix
 from tqdm import tqdm
 from .model import Model
+from .networks import Networks
 from itertools import combinations_with_replacement as cwr
 
 class Features():
@@ -298,21 +299,20 @@ class MultiFeatures(Features):
         self.values = self.values.reshape(self.n_samples, -1)
         self.descriptor_labels = descriptor_labels
 
-    def _get_mutual_information(self, estimator='gaussian', by='label', 
+    def _get_mutual_information(self, estimator='gaussian', by=['label'], 
                                 subset=None):
         """Computes mutual information between all nodes or set of nodes in 
         for each simulation."""
         MI = {}
-
-        # Separates the computation for each simulation
-        if type(by) != list:
-            by = list(by)
+        if isinstance(by, str):
+            by = [by]
+        # Separates computation for each by
         for _by in by:
             if type(_by) == str:
                 labels = self._get_labels(_by)
             elif type(_by) == np.ndarray:
                 labels = _by
-
+            
             for label in pd.unique(labels):
                 ix = np.where(np.array(labels, dtype=object) == label)[0]
                 values = self.values_3d[ix]
@@ -384,13 +384,13 @@ class MultiFeatures(Features):
             iterator = list(cwr(range(self.n_features), 2))
         else:
             iterator = subset
-        for i in tqdm(iterator):
-            for j in range(i+1, self.n_features):
-                covs = np.cov(np.concatenate([values[:, i, :],
-                                              values[:, j, :]],
-                                              axis=-1).T)
-                _det = np.linalg.det(covs)
-                Hxy[[i, j], [j, i]] = _det
+        for ij in tqdm(iterator):
+            i, j = ij
+            covs = np.cov(np.concatenate([values[:, i, :],
+                                            values[:, j, :]],
+                                            axis=-1).T)
+            _det = np.linalg.det(covs)
+            Hxy[[i, j], [j, i]] = _det
         np.fill_diagonal(Hxy, 1)
         Hxy = np.log(Hxy)
         return 1/2*(HxHy - Hxy)
@@ -445,7 +445,9 @@ class MultiFeatures(Features):
             if cmatrix is None:
                 mutual_information = self._get_mutual_information(**kwargs)
             else:
-                nnz = [(i, j) for i, j in zip(*cmatrix.nonzero())]
+                # Getting nonzero elements only in upper triangle matrix
+                nnz = pd.unique([tuple(sorted((i, j)))
+                                for i, j in zip(*cmatrix.nonzero())]).tolist()
                 
                 mutual_information = self._get_mutual_information(subset=nnz,
                                                                     **kwargs)
@@ -462,7 +464,7 @@ class MultiFeatures(Features):
                 df = _df
             else:
                 df = df.merge(_df, on=['node1', 'node2'], how='outer')
-        return df
+        return Networks(df)
 
 
 def digamma_n(x, e, offset=1):

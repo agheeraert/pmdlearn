@@ -1,4 +1,5 @@
 from curses import longname
+import enum
 from math import nan
 from this import d
 from pymol import cmd, stored, selector
@@ -47,8 +48,8 @@ def create_topmat(sele, top, map_indexes, map_residues):
         topmat[map_indexes[id], map_residues[id]] = 1
     return topmat
 
-def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, smaller_max=False, color_compo=False):
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=True)
+def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, smaller_max=False):
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
     net.remove_nodes_from(list(nx.isolates(net)))
     edge_list = sorted(net.edges(data=True), key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
     connected_components = [[nx.number_connected_components(net), 0]]
@@ -66,25 +67,31 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, sma
     else:
         threshold = connected_components[-m, 1]
     df = df.loc[df[weight].abs() > threshold]
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=True)
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
     components_list = [net.subgraph(c).copy() for c in nx.connected_components(net)] 
     if cut_diam > 0:
         robust = [list(c.nodes()) for c in components_list if nx.diameter(c)>=float(cut_diam)]
         net = net.subgraph([x for robust in list(robust) for x in robust])
     components_list = [net.subgraph(c).copy() for c in nx.connected_components(net)] 
-    df = nx.to_pandas_edgelist(net, source='node1', target='node2')
+    df = nx.to_pandas_edgelist(net, source='source', target='target')
     vps = [np.max(np.abs(list(nx.get_edge_attributes(c, weight).values()))) for c in components_list]
     ranking = np.argsort(vps)[::-1]
-    if color_compo:
-        node2compo = {}
-        for i, color in zip(ranking, sns.color_palette("bright", len(ranking))):
-            for a in components_list[i]:
-                node2compo[a] = color
-        df['color'] = df['node1'].map(node2compo)
+    node2compo = {}
+    for i, color in zip(ranking, sns.color_palette("bright", len(ranking))):
+        for a in components_list[i]:
+            node2compo[a] = color
+    df['color'] = df['node1'].map(node2compo)
     return df
 
 
-
+def draw_Network(path, reset_view=True, hide_nodes=True, **kwargs):
+    G = pkl.load(open(path, 'rb'))
+    view = cmd.get_view()
+    draw(G.df, **kwargs)
+    if reset_view:
+        cmd.set_view(view)
+    if hide_nodes:
+        cmd.disable('*nodes')
 
 def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
     view = cmd.get_view()
@@ -173,7 +180,7 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None, sele2=None
 def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75), r=1, 
                 edge_norm=None, weight='weight', w1=None, w2=None, keep_previous=False, auto_patch=True, label='', threshold=None, labeling=None, 
                 keep_interfaces=False, save_df=False, cmap_out=None, topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
-                reset_view=True, samewidth=False, induced=None, group_compo=False, color_compo=False):
+                reset_view=True, samewidth=False, induced=None, group_compo=False):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -185,6 +192,9 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
 
     if reset_view:
         view = cmd.get_view()
+
+    if weight not in df.columns and not (w1 in df.columns and w2 in df.columns):
+        raise NameError('Invalid weight. Valid weights are {}'.format(', '.join(df.columns[2:])))
 
     def _auto_patch(nodes, nodes_df):
         print(len(nodes), len(nodes_df))
@@ -258,7 +268,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
 
 
     #Color by attribute
-    if color_by is not None:
+    if color_by !=None:
         attributes = pd.unique(df[color_by])
         n_colors = len(attributes)
         if color_by_list:
@@ -303,7 +313,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
     if topk:
         df = df.loc[df[weight].abs().sort_values(ascending=False).head(n=topk).index]
     if cca:
-        df = get_cca(df, weight, smaller_max=smaller_max, color_compo=color_compo)
+        df = get_cca(df, weight, smaller_max=smaller_max)
     
     if keep_interfaces:
         if type(keep_interfaces) == list:
@@ -330,7 +340,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
         for i, l in compo.items():
             ix = np.where(df['node1'].isin(l))[0]
             components[ix] = i+1
-        df['component'] = ['C{}'.format(int(i)) for i in components]
+        df['component'] = components
         group_by = 'component'
             
 
@@ -424,15 +434,19 @@ def draw_df_nodes(df, key="node", weight='weight', colors=['red', 'blue'], base_
     if labeling==3:
         cmd.label(selection=' or '.join(all_nodes), expression="resn+resi")
 
-def continuous_color(df, key="node", weight="weight", w1=None, w2=None, base_selection='name CA', palette='blue_white_red'):
+def continuous_color(df, key="node", weight="weight", w1=None, w2=None, base_selection='name CA', palette='blue_white_red', selection="polymer"):
     df = pd.read_pickle(df)
-    to_selection = lambda X: "{} and resi {} and chain {}".format(base_selection, X[3:-2], X[-1])
-    selection = df[key].map(to_selection).values
+    try:
+        to_selection = lambda X: "{} and resi {} and chain {}".format(base_selection, X[3:-2], X[-1])
+        nodes = df[key].map(to_selection).values
+    except TypeError:
+        selection += " and {}".format(base_selection)
+        nodes = selection
     if w1 == None and w2 == None:
         scores = df[weight].values
     else:
         scores = df[w2].values - df[w1].values
-    _color(scores, selection, palette=palette)
+    _color(scores, nodes, palette=palette)
 
 def draw_shortest_paths(arr_path, k=50, **kwargs):
     paths = pkl.load(open(arr_path, 'rb'))[:k]
@@ -452,10 +466,11 @@ def draw_shortest_paths(arr_path, k=50, **kwargs):
 
 def _color(scores, selection, palette="blue_white_red"):
     stored.scores = iter(scores)
-    selection = ' and name CA or '.join(selection)
+    if isinstance(selection, list):
+        selection = ' and name CA or '.join(selection)
     cmd.alter("name CA and (not {})".format(selection), "b=0")
     cmd.alter(selection, "b=next(stored.scores)")
-    cmd.spectrum("b", palette=palette, selection="name CA", byres=1) #, minimum=min, maximum=max)
+    cmd.spectrum("b", palette=palette, selection="name CA", byres=1)
 
 def continuous_color_from_df(df, source="node1", target="node2", weight='weight', base_selection='name CA', palette='blue_white_red'):
     df = pd.read_pickle(df)
