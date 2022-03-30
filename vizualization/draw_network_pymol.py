@@ -1,3 +1,4 @@
+import enum
 from pymol import cmd, stored, selector
 from pymol.cgo import *
 import pandas as pd
@@ -10,6 +11,10 @@ from scipy.sparse import load_npz, csr_matrix
 import networkx as nx
 from networkx.algorithms.community import girvan_newman, modularity
 import pickle as pkl
+
+def minus_log(x):
+    return -np.log(x)
+    
 
 def isfloat(value):
     if type(value) == list:
@@ -31,7 +36,7 @@ def getnum(string):
         try:
             return int(new_str)
         except ValueError:
-            return nan
+            return np.nan
 
 def create_topmat(sele, top, map_indexes, map_residues):
     if sele == None:
@@ -81,24 +86,39 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, sma
 
     return df
 
-def get_girvan_newman(df, weight='weight', source='node1', target='node2', color_compo=True):
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
+def get_girvan_newman(df, weight='weight', source='node1', target='node2', color_compo=True, dist_func=minus_log):
+    if dist_func is not None:
+        df['_{}'.format(weight)] = dist_func(df[weight])
+        old_weights = df[weight]
+        net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr='_{}'.format(weight))
+    else:
+        net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, edge_attr=weight)
     net.remove_nodes_from(list(nx.isolates(net)))
     comp = girvan_newman(net)
     max_modularity = 0
     for communities in comp:
-        mod = modularity(net, communities, weight='apo_dist')
+        mod = modularity(net, communities, weight=weight)
         if mod >= max_modularity:
             out_communities = communities
-            mod = max_modularity
+            max_modularity = mod
     communities_list = [nx.subgraph(net, c).copy() for c in out_communities]
     if color_compo:
+        n_colors = len(communities_list)
+        if len(communities_list) <= 10:
+            palette = sns.color_palette("bright", n_colors=n_colors)
+        else:
+            palette = sns.color_palette("husl", n_colors=n_colors)
+        i2color = dict(enumerate(palette))
         node2compo = {}
         df = nx.to_pandas_edgelist(net, source=source, target=target)
-        for i, color in enumerate(sns.color_palette("bright", len(communities_list))):
-            for a in communities_list[i]:
-                node2compo[a] = color
-        df['color'] = df[source].map(node2compo)
+        for i, c in enumerate(communities_list):
+            for a in c:
+                node2compo[a] = i
+        df['community'] = df[source].map(node2compo)
+        df['color'] = df['community'].map(i2color)
+        df['community'] = df['community'].map(lambda i: 'C{}'.format(i+1))
+    if dist_func is not None:
+        df[weight] = old_weights
     return df
 
 
@@ -198,7 +218,7 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None, sele2=None
 def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75), r=1, 
                 edge_norm=None, weight='weight', w1=None, w2=None, keep_previous=False, auto_patch=True, label='', threshold=None, labeling=None, 
                 keep_interfaces=False, save_df=False, cmap_out=None, topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
-                reset_view=True, samewidth=False, induced=None, group_compo=False, color_compo=False, girvan_newman=False):
+                reset_view=True, samewidth=False, induced=None, group_compo=False, color_compo=False, girvan_newman=False, dist_func=minus_log):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -332,10 +352,11 @@ def draw(df, selection='polymer', group_by=None, color_by=None, color_by_list=No
         df = df.loc[df[weight].abs().sort_values(ascending=False).head(n=topk).index]
     if cca:
         df = get_cca(df, weight, smaller_max=smaller_max, color_compo=color_compo)
+        
     if girvan_newman:
-        df = get_girvan_newman(df, weight, color_compo=color_compo)
-        group_by = 'color'
-
+        df = get_girvan_newman(df, weight, color_compo=color_compo, dist_func=dist_func)
+        group_by = 'community'
+        print(df)
 
     if keep_interfaces:
         if type(keep_interfaces) == list:
