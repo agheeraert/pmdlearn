@@ -33,7 +33,7 @@ mdf_reference = pm.MDFeaturizer('topo.prmtop', 'traj_reference.dcd', label="refe
 # Loading the 10000 last frames with a stride of 5 in the perturbed trajectory  
 mdf_perturbed = pm.MDFeaturizer('topo.prmtop', 'traj_perturbed.dcd', label="perturbed", align=False, begin=-10000, stride=5)
 # This algorithm also support loading a single structure file
-mdf_xray = MDFeaturizer('code.pdb', label="code")
+mdf_xray = pm.MDFeaturizer('code.pdb', label="code")
 ```
 Extract contact features
 ```python
