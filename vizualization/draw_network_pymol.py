@@ -520,8 +520,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             stored.resids,
             stored.chains)]
 
-    print(selection)
-
     nodes_df = pd.unique(df[['node1', 'node2']].values.ravel('K'))
 
     if not isinstance(w1, type(None)) and not isinstance(w2, type(None)):
@@ -535,7 +533,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             notin = [node for node in nodes_df if node not in nodes]
             loc = (df['node1'].isin(notin)) | (df['node2'].isin(notin))
             df = df.loc[~loc]
-    print(nodes, stored.posCA)
     node2CA = dict(zip(nodes, stored.posCA))
 
     # Color by attribute
