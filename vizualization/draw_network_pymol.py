@@ -432,7 +432,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         view = cmd.get_view()
 
     if (weight not in df.columns and
-       not (w1 in df.column and w2 in df.columns)):
+       not (w1 in df.columns and w2 in df.columns)):
         raise NameError('Invalid weight.\
                         Weights are {}'.format(', '.join(df.columns[2:])))
 
