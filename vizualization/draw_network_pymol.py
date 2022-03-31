@@ -28,6 +28,7 @@ def minus_log(x):
     y: array_like of same size than x
     Distance matrix
     """
+    x.fillna(0, inplace=True)
 
     if np.all(0 <= x.all() < 1):
         return -np.log(x)
@@ -450,7 +451,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             nodes_intonly = pd.Series(nodes).map(_cutint)
             int2nodes = dict(zip(nodes_intonly, nodes))
             new_nodes = pd.Series(nodes_df).map(_cutint).map(int2nodes)
-            if all(np.array(new_nodes) is not None):
+            if all(np.array(new_nodes) != None):
                 print('Auto patching working (indices and chain)')
                 return nodes_intonly.index
             else:
@@ -519,6 +520,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             stored.resids,
             stored.chains)]
 
+    print(selection)
+
     nodes_df = pd.unique(df[['node1', 'node2']].values.ravel('K'))
 
     if not isinstance(w1, type(None)) and not isinstance(w2, type(None)):
@@ -532,6 +535,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             notin = [node for node in nodes_df if node not in nodes]
             loc = (df['node1'].isin(notin)) | (df['node2'].isin(notin))
             df = df.loc[~loc]
+    print(nodes, stored.posCA)
     node2CA = dict(zip(nodes, stored.posCA))
 
     # Color by attribute
@@ -614,7 +618,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                     return '{}->{}'.format(x, y)
             vecF = np.vectorize(f)
             loc = (df['community1'] != df2['community1'])
-            print(loc, df.loc[loc])
             df['community1'] = pd.DataFrame(vecF(df['community1'],
                                                  df2['community1']))
             df['community2'] = pd.DataFrame(vecF(df['community2'],
