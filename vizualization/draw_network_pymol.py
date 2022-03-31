@@ -1,3 +1,9 @@
+import seaborn as sns
+import pickle as pkl
+from networkx.algorithms.community import girvan_newman, modularity
+import networkx as nx
+from scipy.sparse import load_npz, csr_matrix
+import numpy as np
 import warnings
 from pymol import cmd, stored, selector
 from pymol.cgo import *
@@ -5,18 +11,13 @@ import pandas as pd
 from scipy.sparse.dok import dok_matrix
 import matplotlib as mpl
 mpl.use('Qt5Agg')
-import seaborn as sns 
-import numpy as np
-from scipy.sparse import load_npz, csr_matrix
-import networkx as nx
-from networkx.algorithms.community import girvan_newman, modularity
-import pickle as pkl
+
 
 def minus_log(x):
     """Function performing a -np.log to compute distances from input matrix.
     Rescales the matrix if positive but not in the [0-1[ interval.
     Raise error for negative values.
-    
+
     Parameters
     ----------
     x: array_like
@@ -28,31 +29,32 @@ def minus_log(x):
     Distance matrix
     """
 
-    if np.all(0<=x.all()<1):
+    if np.all(0 <= x.all() < 1):
         return -np.log(x)
     else:
         warnings.warn("Values not in [0-1[ range, Rescaling to this range")
-        if np.all(0<=x):
+        if np.all(0 <= x):
             # We impose x != 1 by adding a small eps to the max
             # This is not a problem to compute log but we don't want a
             # 0 distance
-            x = x/(np.max(x)+1e-6)
+            x = x / (np.max(x) + 1e-6)
             return -np.log(x)
         else:
             raise ValueError(x)
 
+
 def isfloat(value):
     """Function to check that a value is a float like (convertible to float)
-    
+
     Parameters
     ----------
     value: anything
     Value to check
-    
+
     Output
     ----------
     bool, True if is convertible to float else False"""
-    if type(value) == list:
+    if isinstance(value, list):
         value = value[0]
     try:
         float(value)
@@ -60,14 +62,15 @@ def isfloat(value):
     except ValueError:
         return False
 
+
 def getnum(string):
     """Function to get the number in a string
-    
+
     Parameters
     ----------
     string: str
     Input string to extract a number from
-    
+
     Output
     ----------
     num: int or np.nan
@@ -84,27 +87,29 @@ def getnum(string):
         except ValueError:
             return np.nan
 
+
 def create_topmat(sele, top, map_indexes, map_residues):
     """Function to create a topology matrix from a topology and mappings
     """
-    if sele == None:
+    if sele is None:
         sele = "polymer and not hydrogen"
     sele = "{} and {}".format(sele, top)
     stored.indexlist = []
     cmd.iterate(sele, 'stored.indexlist.append(index)')
-    topmat = dok_matrix((len(map_indexes), 
+    topmat = dok_matrix((len(map_indexes),
                         len(pd.unique(list(map_residues.values())))))
     for id in stored.indexlist:
         topmat[map_indexes[id], map_residues[id]] = 1
     return topmat
 
-def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3, 
+
+def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
             smaller_max=False, color_compo=False):
-    """Internal function that performs connected component analysis on a 
+    """Internal function that performs connected component analysis on a
     given network.
     Parameters
     ----------
-    df: pandas.DataFrame 
+    df: pandas.DataFrame
     Dataframe representing the considered network
 
     weight: str, default='weight'
@@ -122,34 +127,34 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     smaller_max: bool, default=False
     Experimental parameter that allows to select a value smaller than the
     maximum for the number of connected components. Allows to clear more
-    a graph if needed. This parameter is not really useful. Might be 
+    a graph if needed. This parameter is not really useful. Might be
     deprecated
 
     color_compo: bool, default=False
-    Toggles coloring by connected components 
+    Toggles coloring by connected components
 
     Output
     ---------
     df: pandas.DataFrame
-    Dataframe representing the output network from connected component 
+    Dataframe representing the output network from connected component
     analysis.
 
     Reference
     ---------
     to be published
     """
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, 
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
     net.remove_nodes_from(list(nx.isolates(net)))
-    edge_list = sorted(net.edges(data=True), 
-                      key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
+    edge_list = sorted(net.edges(data=True),
+                       key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
     connected_components = [[nx.number_connected_components(net), 0]]
 
-    while len(net.nodes()) !=0:
+    while len(net.nodes()) != 0:
         u, v, dic = edge_list.pop()
         net.remove_edge(u, v)
         net.remove_nodes_from(list(nx.isolates(net)))
-        connected_components.append([nx.number_connected_components(net), 
+        connected_components.append([nx.number_connected_components(net),
                                      abs(dic.get(weight, 1))])
     connected_components = np.array(connected_components)
     m = np.argmax(connected_components[::-1, 0])
@@ -160,13 +165,14 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     else:
         threshold = connected_components[-m, 1]
     df = df.loc[df[weight].abs() > threshold]
-    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target, 
+    net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
-    components_list = [net.subgraph(c).copy() 
+    components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
     if cut_diam > 0:
         robust = [list(c.nodes())
-                  for c in components_list if nx.diameter(c)>=float(cut_diam)]
+                  for c in components_list
+                  if nx.diameter(c) >= float(cut_diam)]
         net = net.subgraph([x for robust in list(robust) for x in robust])
     components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
@@ -183,15 +189,16 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
 
     return df
 
-def get_girvan_newman(df, weight='weight', source='node1', target='node2', 
-                      color_compo=True, dist_func=minus_log, 
+
+def get_girvan_newman(df, weight='weight', source='node1', target='node2',
+                      color_compo=True, dist_func=minus_log,
                       plot_betweenness=False):
-    """Internal function that performs community analysis using a girvan 
+    """Internal function that performs community analysis using a girvan
     newman community decomposition optimizing the modularity measure.
 
     Parameters
     ----------
-    df: pandas.DataFrame 
+    df: pandas.DataFrame
     Dataframe representing the considered network
 
     weight: str, default='weight'
@@ -204,54 +211,54 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
     Column name for target node
 
     color_compo: bool, default=False
-    Toggles coloring by connected components 
+    Toggles coloring by connected components
 
     dist_func: function or None, default=minus_log
     if None, consider that the input network already represents distances
     else computes the distances using a predefined function
 
     plot_betweenness: bool, default=False
-    if True the weight in the output network is replaced by the edge 
+    if True the weight in the output network is replaced by the edge
     betweenness
 
     Output
     ---------
     df: pandas.DataFrame
-    Dataframe representing the output network from connected component 
+    Dataframe representing the output network from connected component
     analysis.
 
     References
     ---------
     Girvan-Newman algorithm:
 
-    Girvan, Michelle, and Mark EJ Newman. 
-    "Community structure in social and biological networks." 
+    Girvan, Michelle, and Mark EJ Newman.
+    "Community structure in social and biological networks."
     Proc. Natl. Acad. Sci. 99.12 (2002): 7821-7826.
 
     Modularity:
 
-    Newman, Mark EJ. 
-    "Modularity and community structure in networks." 
+    Newman, Mark EJ.
+    "Modularity and community structure in networks."
     Proc. Natl. Acad. Sci. 103.23 (2006): 8577-8582.
 
     Application to MD simulations:
 
-    Rivalta, Ivan, et al. 
-    "Allosteric pathways in imidazole glycerol phosphate synthase." 
+    Rivalta, Ivan, et al.
+    "Allosteric pathways in imidazole glycerol phosphate synthase."
     Proc. Natl. Acad. Sci. 109.22 (2012): E1428-E1436.
     """
 
     if dist_func is not None:
         df['_{}'.format(weight)] = dist_func(df[weight])
         old_weights = df[weight]
-        net = nx.from_pandas_edgelist(df.dropna(), 
-                                      source=source, 
-                                      target=target, 
+        net = nx.from_pandas_edgelist(df.dropna(),
+                                      source=source,
+                                      target=target,
                                       edge_attr='_{}'.format(weight))
     else:
-        net = nx.from_pandas_edgelist(df.dropna(), 
-                                      source=source, 
-                                      target=target, 
+        net = nx.from_pandas_edgelist(df.dropna(),
+                                      source=source,
+                                      target=target,
                                       edge_attr=weight)
 
     net.remove_nodes_from(list(nx.isolates(net)))
@@ -275,20 +282,20 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
         for i, c in enumerate(communities_list):
             for a in c:
                 node2compo[a] = i
-        
+
         df['community1'] = df[source].map(node2compo)
         df['community2'] = df[target].map(node2compo)
-        
+
         df['color'] = df['community1'].map(i2color)
         df['color2'] = df['community2'].map(i2color)
 
-        df['community1'] = df['community1'].map(lambda i: 'C{}'.format(i+1))
-        df['community2'] = df['community2'].map(lambda i: 'C{}'.format(i+1))
+        df['community1'] = df['community1'].map(lambda i: 'C{}'.format(i + 1))
+        df['community2'] = df['community2'].map(lambda i: 'C{}'.format(i + 1))
 
     if dist_func is not None:
         df[weight] = old_weights
         if plot_betweenness:
-            b = nx.edge_betweenness_centrality(net, 
+            b = nx.edge_betweenness_centrality(net,
                                                weight='_{}'.format(weight))
             df[weight] = b.values()
     return df
@@ -304,6 +311,7 @@ def draw_Network(path, reset_view=True, hide_nodes=True, **kwargs):
     if hide_nodes:
         cmd.disable('*nodes')
 
+
 def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
     view = cmd.get_view()
     df = pd.read_pickle(path)
@@ -313,10 +321,11 @@ def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
     if hide_nodes:
         cmd.disable('*nodes')
 
-def draw_from_atommat(path, perturbation=None, sele=None, sele1=None, 
+
+def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
                       sele2=None, top=None, top_perturbation=None,
                       norm_expected=False, average_with=None, **kwargs):
-    
+
     def _get_resmat(filepath, topo):
         def load_mat(path):
             if path.split('.')[-1] == 'npz':
@@ -328,14 +337,14 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
         cmd.iterate(topo, 'stored.top_indexes.append(index)')
         cmd.iterate(topo, 'stored.top_residues.append(resi)')
         resid_list = []
-        k=0
-        for elt1, elt2 in zip(stored.top_residues[:-1], 
+        k = 0
+        for elt1, elt2 in zip(stored.top_residues[:-1],
                               stored.top_residues[1:]):
             resid_list.append(k)
             if elt1 != elt2:
-                k+=1
+                k += 1
         resid_list.append(k)
-        map_indexes = dict(zip(stored.top_indexes, 
+        map_indexes = dict(zip(stored.top_indexes,
                                range(len(stored.top_indexes))))
         map_residues = dict(zip(stored.top_indexes, resid_list))
         top1 = create_topmat(sele1, topo, map_indexes, map_residues)
@@ -345,37 +354,36 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
         resmat.eliminate_zeros()
         if norm_expected:
             expected = (top1.sum(axis=1).transpose() @ top1).transpose() \
-                         @ (top2.sum(axis=1).transpose() @ top2)
+                @ (top2.sum(axis=1).transpose() @ top2)
             resmat /= expected
-            resmat[np.isnan(resmat)] = 0   
+            resmat[np.isnan(resmat)] = 0
             resmat = csr_matrix(resmat)
         return resmat
 
-    sele1 = "not hydrogen" if sele1 == None else sele1
-    sele2 = "not hydrogen" if sele2 == None else sele2    
+    sele1 = "not hydrogen" if sele1 is None else sele1
+    sele2 = "not hydrogen" if sele2 is None else sele2
 
-    if top == None:
+    if top is None:
         top = '{}* and polymer'.format(path.split('.')[0].split('_')[0])
-    
-    if sele1 == None and sele2 == None:
+
+    if sele1 is None and sele2 is None:
         sele1, sele2 = sele, sele
 
-
     resmat = _get_resmat(path, top)
-    if perturbation != None:
-        if top_perturbation == None:
+    if perturbation is not None:
+        if top_perturbation is None:
             fmt = perturbation.split('.')[0].split('_')[0]
             top_perturbation = '{}* and polymer'.format(fmt)
         resmat2 = _get_resmat(perturbation, top_perturbation)
         resmat = resmat2 - resmat
 
-    elif average_with != None:
-        if type(average_with) == str:
+    elif average_with is not None:
+        if isinstance(average_with, str):
             average_with = [average_with]
         n_dynamics = len(average_with) + 1
-        top_list = ['{}* and polymer'.format(filepath.split('.')[0]\
+        top_list = ['{}* and polymer'.format(filepath.split('.')[0]
                     .split('_')[0]) for filepath in average_with]
-        resmat_list = [_get_resmat(_1, _2) 
+        resmat_list = [_get_resmat(_1, _2)
                        for _1, _2 in zip(average_with, top_list)]
         average = np.zeros((resmat.shape))
         for _ in [resmat] + resmat_list:
@@ -383,34 +391,33 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
         average /= n_dynamics
         resmat = csr_matrix(average)
 
-    
     stored.resnames, stored.resids, stored.chains = [], [], []
     _top = "({} or {}) and {}".format(sele1, sele2, top)
     cmd.iterate(_top, 'stored.resnames.append(resn)')
     cmd.iterate(_top, 'stored.resids.append(resi)')
     cmd.iterate(_top, 'stored.chains.append(chain)')
-    nodes = pd.unique([resn+resi+':'+chain 
-                       for resn, resi, chain 
-                       in zip(stored.resnames, 
-                              stored.resids, 
+    nodes = pd.unique([resn + resi + ':' + chain
+                       for resn, resi, chain
+                       in zip(stored.resnames,
+                              stored.resids,
                               stored.chains)])
 
     id2node = dict(enumerate(nodes))
     df = nx.to_pandas_edgelist(nx.from_scipy_sparse_matrix(resmat))
-    df.columns=['node1', 'node2', 'weight']
+    df.columns = ['node1', 'node2', 'weight']
     df['node1'] = df['node1'].map(id2node)
     df['node2'] = df['node2'].map(id2node)
 
     draw(df, selection=top, **kwargs)
-    
 
-def draw(df, selection='polymer', group_by=None, color_by=None, 
-         color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75), 
-         r=1, edge_norm=None, weight='weight', w1=None, w2=None, 
-         keep_previous=False, auto_patch=True, label='', threshold=None, 
-         labeling=None, keep_interfaces=False, save_df=False, cmap_out=None, 
-         topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA', 
-         reset_view=True, samewidth=False, induced=None, group_compo=False, 
+
+def draw(df, selection='polymer', group_by=None, color_by=None,
+         color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75),
+         r=1, edge_norm=None, weight='weight', w1=None, w2=None,
+         keep_previous=False, auto_patch=True, label='', threshold=None,
+         labeling=None, keep_interfaces=False, save_df=False, cmap_out=None,
+         topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
+         reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False):
     """
@@ -424,8 +431,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     if reset_view:
         view = cmd.get_view()
 
-    if weight not in df.columns and not (w1 in df.columns 
-                                         and w2 in df.columns):
+    if (weight not in df.columns and
+       not (w1 in df.column and w2 in df.columns)):
         raise NameError('Invalid weight.\
                         Weights are {}'.format(', '.join(df.columns[2:])))
 
@@ -438,12 +445,12 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             def _cutint(_):
                 try:
                     return int(_)
-                except:
-                    return str(getnum(_))+':'+_.split(':')[-1]
+                except BaseException:
+                    return str(getnum(_)) + ':' + _.split(':')[-1]
             nodes_intonly = pd.Series(nodes).map(_cutint)
             int2nodes = dict(zip(nodes_intonly, nodes))
             new_nodes = pd.Series(nodes_df).map(_cutint).map(int2nodes)
-            if all(np.array(new_nodes) != None):
+            if all(np.array(new_nodes) is not None):
                 print('Auto patching working (indices and chain)')
                 return nodes_intonly.index
             else:
@@ -457,29 +464,29 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             if samewidth and row[weight] != 0:
                 radius = 0.5
             else:
-                radius = row[weight]/edge_norm
-            if type(row['color']) == str:
+                radius = row[weight] / edge_norm
+            if isinstance(row['color'], str):
                 color = mpl.colors.to_rgb(row['color'])
             else:
                 color = row['color']
 
             if 'color2' in row:
-                if type(row['color2']) == str:
+                if isinstance(row['color2'], str):
                     color2 = mpl.colors.to_rgb(row['color2'])
                 else:
                     color2 = row['color2']
             else:
                 color2 = color
-            objs+=[CYLINDER, 
-                   *node2CA[row['node1']], 
-                   *node2CA[row['node2']], 
-                   radius, 
-                   *color, 
-                   *color2]
+            objs += [CYLINDER,
+                     *node2CA[row['node1']],
+                     *node2CA[row['node2']],
+                     radius,
+                     *color,
+                     *color2]
 
         cmd.load_cgo(objs, '{}edges'.format(label))
-        if type(base_color) == str:
-            base_color = mpl.colors.to_rgb(base_color) 
+        if isinstance(base_color, str):
+            base_color = mpl.colors.to_rgb(base_color)
         obj_nodes = [COLOR, *base_color]
         for u in nodelist:
             x, y, z = node2CA[u]
@@ -490,40 +497,44 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         cmd.delete("*edges *nodes")
         cmd.label(selection=selection, expression="")
 
-
-    #Get correspondance between 3D positions and labels
+    # Get correspondance between 3D positions and labels
     selection += " and {}".format(center)
     stored.posCA, stored.resnames, stored.resids, stored.chains = [], [], [],\
                                                                   []
 
-    cmd.iterate_state(1, 
-                      selector.process(selection), 
+    cmd.iterate_state(1,
+                      selector.process(selection),
                       "stored.posCA.append([x,y,z])")
     cmd.iterate(selection, 'stored.resnames.append(resn)')
     cmd.iterate(selection, 'stored.resids.append(resi)')
     cmd.iterate(selection, 'stored.chains.append(chain)')
-    nodes = [resn+resi+':'+chain for resn, resi, chain in zip(stored.resnames,
-                                                              stored.resids, 
-                                                              stored.chains)]
+    nodes = [
+        resn +
+        resi +
+        ':' +
+        chain for resn,
+        resi,
+        chain in zip(
+            stored.resnames,
+            stored.resids,
+            stored.chains)]
 
     nodes_df = pd.unique(df[['node1', 'node2']].values.ravel('K'))
 
-
-    if type(w1) != type(None) and type(w2) !=type(None):
+    if not isinstance(w1, type(None)) and not isinstance(w2, type(None)):
         weight = '{}-{}'.format(w2, w1)
         df[weight] = df[w2] - df[w1]
     df = df.loc[df[weight] != 0]
     if not all(node in nodes for node in nodes_df):
         if auto_patch:
             nodes = _auto_patch(nodes, nodes_df)
-        else: 
+        else:
             notin = [node for node in nodes_df if node not in nodes]
             loc = (df['node1'].isin(notin)) | (df['node2'].isin(notin))
             df = df.loc[~loc]
     node2CA = dict(zip(nodes, stored.posCA))
 
-
-    #Color by attribute
+    # Color by attribute
     if color_by is not None:
         attributes = pd.unique(df[color_by])
         n_colors = len(attributes)
@@ -536,24 +547,24 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         attr2color = dict(zip(attributes, palette))
         df['color'] = df[color_by].map(attr2color)
 
-    #Color by sign of weight
-    elif color_sign: 
-        if type(color_sign) == list:
+    # Color by sign of weight
+    elif color_sign:
+        if isinstance(color_sign, list):
             color1, color2 = color_sign
         elif color_sign == -1:
             color1, color2 = (0, 0, 1), (1, 0, 0)
         else:
             color1, color2 = (1, 0, 0), (0, 0, 1)
-        
+
         print('Positive values in {} and negative values in {}'.
               format(color1, color2))
-        weight2color = lambda X: color1 if X >= 0 else color2
+
+        def weight2color(X): return color1 if X >= 0 else color2
         df['color'] = df[weight].map(weight2color)
     else:
-        df['color'] = [base_color]*len(df['node1'])
+        df['color'] = [base_color] * len(df['node1'])
 
-
-    #Apply threshold/topk/cca on weight
+    # Apply threshold/topk/cca on weight
     if isinstance(threshold, (int, float, complex)):
         df = df.loc[df[weight].abs() >= threshold]
     elif isinstance(threshold, str):
@@ -567,114 +578,118 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         df = df.loc[df[weight].abs().sort_values(ascending=False).
                     head(n=topk).index]
     if cca:
-        df = get_cca(df, 
-                     weight, 
-                     smaller_max=smaller_max, 
+        df = get_cca(df,
+                     weight,
+                     smaller_max=smaller_max,
                      color_compo=color_compo)
-        
+
     if girvan_newman:
         if w1 is None and w2 is None:
-            df = get_girvan_newman(df, 
-                                   weight, 
-                                   color_compo=color_compo, 
-                                   dist_func=dist_func, 
+            df = get_girvan_newman(df,
+                                   weight,
+                                   color_compo=color_compo,
+                                   dist_func=dist_func,
                                    plot_betweenness=plot_betweenness)
         else:
             _df = df.copy()
-            df = get_girvan_newman(df, 
-                                   w1, 
-                                   color_compo=color_compo, 
-                                   dist_func=dist_func, 
+            df = get_girvan_newman(df,
+                                   w1,
+                                   color_compo=color_compo,
+                                   dist_func=dist_func,
                                    plot_betweenness=plot_betweenness)
 
-            df2 = get_girvan_newman(_df, 
-                                    w2, 
-                                    color_compo=color_compo, 
-                                    dist_func=dist_func, 
+            df2 = get_girvan_newman(_df,
+                                    w2,
+                                    color_compo=color_compo,
+                                    dist_func=dist_func,
                                     plot_betweenness=plot_betweenness)
 
             weight = '{}-{}'.format(w2, w1)
             df[weight] = df2[w2] - df[w1]
-            def f(x, y): 
-                if x==y:
+
+            def f(x, y):
+                if x == y:
                     return x
                 else:
-                    return '{}->{}'.format(x, y) 
+                    return '{}->{}'.format(x, y)
             vecF = np.vectorize(f)
             loc = (df['community1'] != df2['community1'])
             print(loc, df.loc[loc])
-            df['community1'] = pd.DataFrame(vecF(df['community1'], 
+            df['community1'] = pd.DataFrame(vecF(df['community1'],
                                                  df2['community1']))
-            df['community2'] = pd.DataFrame(vecF(df['community2'], 
+            df['community2'] = pd.DataFrame(vecF(df['community2'],
                                                  df2['community2']))
 
         group_by = 'community1'
         if remove_intracomm:
             df = df.loc[df['community1'] != df['community2']]
-    #Automatic normalization factor
-    if edge_norm == None:
-        edge_norm = np.max(np.abs(df[weight]))/float(r)
+    # Automatic normalization factor
+    if edge_norm is None:
+        edge_norm = np.max(np.abs(df[weight])) / float(r)
     else:
         edge_norm = float(edge_norm)
 
     if keep_interfaces:
-        if type(keep_interfaces) == list:
+        if isinstance(keep_interfaces, list):
             print('Keeping only a list of interfaces is not yet implemented')
         else:
-            getchain = lambda X: str(X[-1])
+            def getchain(X): return str(X[-1])
             df = df.loc[df['node1'].map(getchain) != df['node2'].
                         map(getchain)]
 
-    df = df.loc[df['color'].notna()] 
+    df = df.loc[df['color'].notna()]
     df = df.loc[df[weight].notna()]
 
     if induced is not None:
         if isinstance(induced, str):
             induced = [induced]
-        G = nx.from_pandas_edgelist(df, 
-                                    target='node1', 
-                                    source='node2', 
+        G = nx.from_pandas_edgelist(df,
+                                    target='node1',
+                                    source='node2',
                                     edge_attr=True)
 
-        G = nx.compose_all([G.subgraph(nx.node_connected_component(G, node)) 
+        G = nx.compose_all([G.subgraph(nx.node_connected_component(G, node))
                             for node in induced if node in G.nodes()])
         df = nx.to_pandas_edgelist(G, target='node1', source='node2')
         print(', '.join(list(G.nodes())))
 
     if group_compo:
-        net = nx.from_pandas_edgelist(df, 
-                                      source="node1", 
-                                      target="node2", 
+        net = nx.from_pandas_edgelist(df,
+                                      source="node1",
+                                      target="node2",
                                       edge_attr=True)
 
-        compo = {i: list(c) 
-                 for i, c in enumerate(sorted(nx.
-                 connected_components(net), key=len, reverse=True))}
+        compo = {
+            i: list(c) for i,
+            c in enumerate(
+                sorted(
+                    nx. connected_components(net),
+                    key=len,
+                    reverse=True))}
 
         components = np.zeros(len(df))
 
         for i, l in compo.items():
             ix = np.where(df['node1'].isin(l))[0]
-            components[ix] = i+1
+            components[ix] = i + 1
 
         df['component'] = ['C{}'.format(int(i)) for i in components]
         group_by = 'component'
-            
 
-    #Draws groups or all or in function of sign of weight
-    if group_by != None:
+    # Draws groups or all or in function of sign of weight
+    if group_by is not None:
         groups = pd.unique(df[group_by])
         for group in groups:
-            _draw_df(df.loc[df[group_by]==group], 
-                     label=group, 
+            _draw_df(df.loc[df[group_by] == group],
+                     label=group,
                      samewidth=samewidth)
     else:
         if color_sign:
-            _draw_df(df.loc[df[weight]>=0], 
+            _draw_df(df.loc[df[weight] >= 0],
                      label='pos_{}'.format(label if label != '' else weight),
                      samewidth=samewidth)
-            _draw_df(df.loc[df[weight]<0], 
-                     label='neg_{}'.format(label if label != '' else weight), 
+            _draw_df(df.loc[df[weight] < 0],
+                     label='neg_{}'.format(label if label != '' else weight),
                      samewidth=samewidth)
         else:
             _draw_df(df, label=label, samewidth=samewidth)
@@ -684,56 +699,56 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                 format(getnum(elt), str(elt).split(':')[-1]) for elt in sel]
     selnodes = ' or '.join(selnodes)
 
-    #Labelling
-    if labeling==1:
+    # Labelling
+    if labeling == 1:
         cmd.label(selection=selnodes, expression="oneletter+resi")
-    if labeling==3:
+    if labeling == 3:
         cmd.label(selection=selnodes, expression="resn+resi")
 
     if save_df:
         pd.to_pickle(df, save_df)
 
-    if cmap_out != None:
-        net = nx.from_pandas_edgelist(df, 
-                                      source="node1", 
-                                      target="node2", 
+    if cmap_out is not None:
+        net = nx.from_pandas_edgelist(df,
+                                      source="node1",
+                                      target="node2",
                                       edge_attr=True)
         cmap = nx.to_numpy_array(net, weight=weight)
         np.save(cmap_out, cmap)
-    
+
     if 'ncompo' in to_print:
-        net = nx.from_pandas_edgelist(df, 
-                                      source="node1", 
-                                      target="node2", 
+        net = nx.from_pandas_edgelist(df,
+                                      source="node1",
+                                      target="node2",
                                       edge_attr=True)
         print('Number of components {}'.
               format(nx.number_connected_components(net)))
-    
+
     if reset_view:
         cmd.set_view(view)
 
 
-def show_mut(sele1, sele2, representation="licorice", color=None, 
+def show_mut(sele1, sele2, representation="licorice", color=None,
              label="?mutations"):
     cmd.align(sele2, sele1)
     cmd.hide("everything", label)
     cmd.delete(label)
     sele1_CA = sele1 + ' and name CA'
-    sele2_CA = sele2 +' and name CA'
+    sele2_CA = sele2 + ' and name CA'
     stored.res1, stored.res2, stored.resid, stored.chains = [], [], [], []
     cmd.iterate(sele1_CA, 'stored.res1.append(resn)')
     cmd.iterate(sele2_CA, 'stored.res2.append(resn)')
     cmd.iterate(sele2_CA, 'stored.resid.append(resi)')
     cmd.iterate(sele2_CA, 'stored.chains.append(chain)')
-    res1, res2, resid, chains = map(np.array, 
-                                    [stored.res1, 
-                                     stored.res2, 
-                                     stored.resid, 
+    res1, res2, resid, chains = map(np.array,
+                                    [stored.res1,
+                                     stored.res2,
+                                     stored.resid,
                                      stored.chains])
     mutation_indexes = np.where(res1 != res2)
     mutations_resi = resid[mutation_indexes]
     mutations_chains = chains[mutation_indexes]
-    selection = ["{} and resi {} and chain {}".format(sele2, resi, chain) 
+    selection = ["{} and resi {} and chain {}".format(sele2, resi, chain)
                  for resi, chain in zip(mutations_resi, mutations_chains)]
     cmd.select(label, " or ".join(selection))
     cmd.show_as(representation=representation, selection=label)
@@ -742,13 +757,16 @@ def show_mut(sele1, sele2, representation="licorice", color=None,
     else:
         cmd.util.cbaw(label)
 
-def draw_df_nodes(df, key="node", weight='weight', colors=['red', 'blue'], 
-                  base_selection='name N+H', r=1, labeling=False, 
+
+def draw_df_nodes(df, key="node", weight='weight', colors=['red', 'blue'],
+                  base_selection='name N+H', r=1, labeling=False,
                   keep_previous=False, show_unassigned=False):
 
     df = pd.read_pickle(df)
-    v2color = lambda X: colors[0] if X >= 0 else colors[1]
-    if r==1:
+
+    def v2color(X):
+        return colors[0] if X >= 0 else colors[1]
+    if r == 1:
         r = np.max(df[weight].abs())
     if not keep_previous:
         cmd.hide("spheres", '*')
@@ -763,40 +781,42 @@ def draw_df_nodes(df, key="node", weight='weight', colors=['red', 'blue'],
     for row in df.iterrows():
         row = row[1]
         node = row[key]
-        selection="{} and resi {} and chain {}".format(base_selection, 
-                                                       node[3:-2], 
-                                                       node[-1])
+        selection = "{} and resi {} and chain {}".format(base_selection,
+                                                         node[3:-2],
+                                                         node[-1])
         cmd.select('temp', selection)
         cmd.show("sphere", "temp")
-        cmd.set("sphere_scale", value=row[weight]/r, selection='temp')
+        cmd.set("sphere_scale", value=row[weight] / r, selection='temp')
         cmd.set("sphere_transparency", value=0, selection="temp")
         cmd.color(v2color(row[weight]), selection="temp")
         all_nodes.append(selection)
-    if labeling==1:
-        cmd.label(selection=' or '.join(all_nodes), 
+    if labeling == 1:
+        cmd.label(selection=' or '.join(all_nodes),
                   expression="oneletter+resi")
-    if labeling==3:
-        cmd.label(selection=' or '.join(all_nodes), 
+    if labeling == 3:
+        cmd.label(selection=' or '.join(all_nodes),
                   expression="resn+resi")
 
-def continuous_color(df, key="node", weight="weight", w1=None, w2=None, 
-                     base_selection='name CA', palette='blue_white_red', 
+
+def continuous_color(df, key="node", weight="weight", w1=None, w2=None,
+                     base_selection='name CA', palette='blue_white_red',
                      selection="polymer"):
-                     
+
     df = pd.read_pickle(df)
     try:
         def to_selection(X):
             return "{} and resi {} and chain {}".\
-                    format(base_selection, X[3:-2], X[-1])
+                format(base_selection, X[3:-2], X[-1])
         nodes = df[key].map(to_selection).values
     except TypeError:
         selection += " and {}".format(base_selection)
         nodes = selection
-    if w1 == None and w2 == None:
+    if w1 is None and w2 is None:
         scores = df[weight].values
     else:
         scores = df[w2].values - df[w1].values
     _color(scores, nodes, palette=palette)
+
 
 def draw_shortest_paths(arr_path, k=50, **kwargs):
     paths = pkl.load(open(arr_path, 'rb'))[:k]
@@ -805,13 +825,12 @@ def draw_shortest_paths(arr_path, k=50, **kwargs):
     for i, path in enumerate(paths):
         node1 += path[:-1]
         node2 += path[1:]
-        weights += [k-i]*(len(path)-1)
-    df = pd.DataFrame({'node1': node1, 
+        weights += [k - i] * (len(path) - 1)
+    df = pd.DataFrame({'node1': node1,
                        'node2': node2,
                        'weight': weights})
 
     draw(df, **kwargs)
-
 
 
 def _color(scores, selection, palette="blue_white_red"):
@@ -822,22 +841,23 @@ def _color(scores, selection, palette="blue_white_red"):
     cmd.alter(selection, "b=next(stored.scores)")
     cmd.spectrum("b", palette=palette, selection="name CA", byres=1)
 
-def continuous_color_from_df(df, source="node1", target="node2", 
-                             weight='weight', base_selection='name CA', 
+
+def continuous_color_from_df(df, source="node1", target="node2",
+                             weight='weight', base_selection='name CA',
                              palette='blue_white_red'):
     df = pd.read_pickle(df)
+
     def to_selection(X):
         return "{} and resi {} and chain {}".\
-                format(base_selection, X[3:-2], X[-1])
+            format(base_selection, X[3:-2], X[-1])
     unique_nodes = pd.unique(df[[source, target]].values.ravel('K'))
     selection = list(map(to_selection, unique_nodes))
     scores = []
     for node in unique_nodes:
         loc = ((df[source] == node) | (df[target] == node)) \
-                & (df[target] != df[source])
+            & (df[target] != df[source])
         scores.append(np.sum(df.loc[loc][weight].values))
     _color(scores, selection, palette=palette)
-    
 
 
 cmd.extend("draw_from_df", draw_from_df)

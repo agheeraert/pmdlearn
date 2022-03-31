@@ -13,6 +13,7 @@ from .model import Model
 from .networks import Networks
 from itertools import combinations_with_replacement as cwr
 
+
 class Features():
     """General purpose class handling all features
 
@@ -22,18 +23,18 @@ class Features():
     Values taken by the features in each sample
 
     indices: np.ndarray of size (n_features, n_nodes)
-    Indices or labels representing the features (by default the amino acid 
+    Indices or labels representing the features (by default the amino acid
     index). The trivial case of n_nodes = 1 is for intrinsic properties but
     n_nodes = 2 for shared properties that can be represented as graphs and
     n_nodes > 2 for hypergraphs.
 
     name: string
     Name of the descripted features. Is used to assess how two Features class
-    should be concatenated 
+    should be concatenated
 
     label: string or list of strings
     Label of the descripted system
-    
+
     replica: int or list of ints
     Number of the system replica
 
@@ -46,7 +47,7 @@ class Features():
     Number of samples
 
     samples_per_label: list of int or None
-    If label and replica are lists, this is a list representing how many 
+    If label and replica are lists, this is a list representing how many
     samples correspond to each label and replica.
 
 
@@ -56,6 +57,7 @@ class Features():
     Examples
     --------
     """
+
     def __init__(self, values, indices, name, label, replica,
                  samples_per_label=None):
         self.values = values
@@ -94,8 +96,8 @@ class Features():
 
         # Easy case when number of features not fluctuating
         if np.array_equal(self.indices, other.indices):
-                indices = self.indices
-                values = np.concatenate([v1, v2], axis=0)
+            indices = self.indices
+            values = np.concatenate([v1, v2], axis=0)
         else:
             all_indices = np.concatenate([self.indices, other.indices], axis=0)
             indices, inv = np.unique(all_indices, return_inverse=True,
@@ -107,14 +109,13 @@ class Features():
         return self.__class__(values, indices, name, labels, replica,
                               samples_per_label=spl)
 
-
     def ca(self, kind=PCA, by='label', n_components=2, **kwargs):
         """Performs different kinds of component analysis (decomposition)
         using scikit-learn classes
 
         Parameters
         ----------
-        kind: class, default=PCA 
+        kind: class, default=PCA
         sklearn.decomposition class which does the component analysis
 
         by: string, default='label'
@@ -135,23 +136,22 @@ class Features():
             X_new = ca_obj.ca.fit_transform(self.values)
         ca_obj.scatter_dataframe(X_new)
         return ca_obj
-    
 
     def _get_labels(self, by):
-        if type(self.label) != list:
+        if not isinstance(self.label, list):
             warnings.warn("This trajectory has only one label.")
-            Y = [self.label]*self.samples_per_label[0]
+            Y = [self.label] * self.samples_per_label[0]
         else:
             if by == 'label':
                 labels = self.label
             elif by == 'replica':
-                labels = ["{}{}".format(l, r)
-                          for l, r in zip(self.label, self.replica)]
+                labels = ["{}{}".format(lab, r)
+                          for lab, r in zip(self.label, self.replica)]
             elif by == 'all':
-                labels = ['all']*len(self.label)
+                labels = ['all'] * len(self.label)
             Y = []
             for elt, nf in zip(labels, self.samples_per_label):
-                Y.extend([elt]*nf)
+                Y.extend([elt] * nf)
         return Y
 
     def average(self, by=['replica', 'label'], weights=None, frequency=False):
@@ -165,14 +165,14 @@ class Features():
 
         weights, array_like or None, default=None
         An array of weights associated with the values in a. Each value in a
-        contributes to the average according to its associated weight. The 
+        contributes to the average according to its associated weight. The
         weights array can either be 1-D (in which case its length must be the
-        size of a along the given axis) or of the same shape as a. 
+        size of a along the given axis) or of the same shape as a.
         If weights=None, then all data in a are assumed to have a weight equal
-        to one. 
+        to one.
 
         frequency, bool, default=False
-        If frequency=True returns a frequency network instead of the average 
+        If frequency=True returns a frequency network instead of the average
         network
 
         Output
@@ -188,15 +188,15 @@ class Features():
         if len(self.indices.shape) < 2 or self.indices.shape[1] == 1:
             df = pd.DataFrame({'indices': self.indices.flatten()})
         else:
-            df = pd.DataFrame({'node{}'.format(i+1): self.indices[:, i]
+            df = pd.DataFrame({'node{}'.format(i + 1): self.indices[:, i]
                                for i in range(self.indices.shape[1])})
 
-        if type(by) != list:
+        if not isinstance(by, list):
             by = list(by)
         for _by in by:
-            if type(_by) == str:
+            if isinstance(_by, str):
                 labels = self._get_labels(_by)
-            elif type(_by) == np.ndarray:
+            elif isinstance(_by, np.ndarray):
                 labels = _by
             else:
                 raise TypeError("by argument should be of type string or \
@@ -232,14 +232,13 @@ class Features():
             dic = dict(enumerate(dic))
         U, inv = np.unique(self.indices, return_inverse=True)
         # Translates atomic contact information in residue contact info
-        self.indices = np.array([dic[x] 
+        self.indices = np.array([dic[x]
                                 for x in U])[inv].reshape(self.indices.shape)
-
 
 
 class MultiFeatures(Features):
     """General purpose class handling multiple features per node or set of
-    nodes. A typical example is the (x, y, z) coordinates for an atom. This 
+    nodes. A typical example is the (x, y, z) coordinates for an atom. This
     class is mainly used to perform correlation analysis.
 
     Parameters
@@ -248,24 +247,24 @@ class MultiFeatures(Features):
     Values taken by the features in each sample
 
     indices: np.ndarray of size (n_features, n_nodes)
-    Indices or labels representing the features (by default the amino acid 
+    Indices or labels representing the features (by default the amino acid
     index). The trivial case of n_nodes = 1 is for intrinsic properties but
     n_nodes = 2 for shared properties that can be represented as graphs and
     n_nodes > 2 for hypergraphs.
 
     name: string
     Name of the descripted features. Is used to assess how two Features class
-    should be concatenated 
+    should be concatenated
 
     label: string or list of strings
     Label of the descripted system
-    
+
     replica: int or list of ints
     Number of the system replica
 
     descriptor_labels: list of len (n_descriptors)
     Labels for each descriptors
-    
+
 
     Attributes
     ----------
@@ -282,7 +281,7 @@ class MultiFeatures(Features):
     Number of descriptor per node or set of nodes
 
     samples_per_label: list of int or None
-    If label and replica are lists, this is a list representing how many 
+    If label and replica are lists, this is a list representing how many
     samples correspond to each label and replica.
 
     References
@@ -299,30 +298,30 @@ class MultiFeatures(Features):
         self.values = self.values.reshape(self.n_samples, -1)
         self.descriptor_labels = descriptor_labels
 
-    def _get_mutual_information(self, estimator='gaussian', by=['label'], 
+    def _get_mutual_information(self, estimator='gaussian', by=['label'],
                                 subset=None):
-        """Computes mutual information between all nodes or set of nodes in 
+        """Computes mutual information between all nodes or set of nodes in
         for each simulation."""
         MI = {}
         if isinstance(by, str):
             by = [by]
         # Separates computation for each by
         for _by in by:
-            if type(_by) == str:
+            if isinstance(_by, str):
                 labels = self._get_labels(_by)
-            elif type(_by) == np.ndarray:
+            elif isinstance(_by, np.ndarray):
                 labels = _by
-            
+
             for label in pd.unique(labels):
                 ix = np.where(np.array(labels, dtype=object) == label)[0]
                 values = self.values_3d[ix]
-                # Dispatches the correlation computation between different 
+                # Dispatches the correlation computation between different
                 # estimators
                 if estimator == 'gaussian':
-                    MI[label] = self._gaussian_estimator(values=values, 
+                    MI[label] = self._gaussian_estimator(values=values,
                                                          subset=subset)
                 elif estimator == 'histogram':
-                    MI[label] = self._histogram_estimator(values=values, 
+                    MI[label] = self._histogram_estimator(values=values,
                                                           subset=subset)
                 elif estimator[1:4] == 'knn':
                     # Knn estimator has 2 other arguments, the number of nn
@@ -332,9 +331,9 @@ class MultiFeatures(Features):
                         estimate = 1
                     else:
                         estimate = int(estimator[4])
-                    MI[label] = self._knn_estimator(values=values, 
-                                                    k=k, 
-                                                    estimate=estimate, 
+                    MI[label] = self._knn_estimator(values=values,
+                                                    k=k,
+                                                    estimate=estimate,
                                                     subset=subset)
 
         return MI
@@ -344,15 +343,16 @@ class MultiFeatures(Features):
         has terrible performance and accuracy."""
 
         if bins is None:
-            bins = tuple([int(np.sqrt(values.shape[0]/5))])*self.n_descriptors
-        
-        probabilities = np.array([np.histogramdd(values[:, i, :], 
+            bins = tuple([int(np.sqrt(values.shape[0] / 5))]) * \
+                self.n_descriptors
+
+        probabilities = np.array([np.histogramdd(values[:, i, :],
                                   bins=bins)[0]
                                   for i in range(self.n_features)])
 
-        entropies = np.array([entropy(row.flatten()) 
+        entropies = np.array([entropy(row.flatten())
                              for row in probabilities])
-        
+
         j_entropies = np.zeros((self.n_features, self.n_features))
 
         if subset is None:
@@ -363,20 +363,20 @@ class MultiFeatures(Features):
         for ij in tqdm(iterator):
             i, j = ij
             probs = np.histogramdd(np.concatenate([values[:, i, :],
-                                                    values[:, j, :]], 
-                                                    axis=-1))[0].flatten()
+                                                   values[:, j, :]],
+                                                  axis=-1))[0].flatten()
             j_entropies[[i, j], [j, i]] = entropy(probs)
         mutual_information = np.add.outer(entropies, entropies)
         mutual_information -= j_entropies
         return mutual_information
-    
+
     def _gaussian_estimator(self, values, subset=None):
         """Gaussian estimator to evaluate mutual information. Finds orthogonal
-        correlation but remains a linear estimator. Rapid performance but 
+        correlation but remains a linear estimator. Rapid performance but
         incomplete."""
         Sx = np.stack([np.cov(elt)
-                        for elt in values.transpose(1, 2, 0)],
-                        axis=0)
+                       for elt in values.transpose(1, 2, 0)],
+                      axis=0)
         det = np.log(np.linalg.det(Sx))
         HxHy = np.add.outer(det, det)
         Hxy = np.zeros_like(HxHy)
@@ -387,17 +387,17 @@ class MultiFeatures(Features):
         for ij in tqdm(iterator):
             i, j = ij
             covs = np.cov(np.concatenate([values[:, i, :],
-                                            values[:, j, :]],
-                                            axis=-1).T)
+                                          values[:, j, :]],
+                                         axis=-1).T)
             _det = np.linalg.det(covs)
             Hxy[[i, j], [j, i]] = _det
         np.fill_diagonal(Hxy, 1)
         Hxy = np.log(Hxy)
-        return 1/2*(HxHy - Hxy)
+        return 1 / 2 * (HxHy - Hxy)
 
-    def _knn_estimator(self, values, k=5, estimate=1, correction=True, 
+    def _knn_estimator(self, values, k=5, estimate=1, correction=True,
                        subset=None):
-        """Knn estimator to evaluate mutual information. Is intrinsically 
+        """Knn estimator to evaluate mutual information. Is intrinsically
         non-linear but has long computation time."""
 
         # The precise knn estimator changes one offset in the digamma function
@@ -407,9 +407,9 @@ class MultiFeatures(Features):
             const = 0
         if estimate == 2:
             offset = 0
-            const = -1/k 
-        
-        #Initializing mutual information
+            const = -1 / k
+
+        # Initializing mutual information
         mutual_information = np.ones((self.n_features, self.n_features))
         mutual_information *= digamma(k) + digamma(values.shape[0]) + const
 
@@ -426,19 +426,18 @@ class MultiFeatures(Features):
             # Building KDTree with max norm metric
             tree = KDTree(points, metric='chebyshev')
             # Adding an offset to not count self as nearest neighbor
-            e = tree.query(points, k=k+1)[0][:, k]
+            e = tree.query(points, k=k + 1)[0][:, k]
             digamma_nxny = (digamma_n(x, e, offset=offset) +
                             digamma_n(y, e, offset=offset))
             digamma_nxny = digamma_nxny[np.isfinite(digamma_nxny)]
             mutual_information[[i, j], [j, i]] -= np.average(digamma_nxny)
-                # print(mutual_information[i, j])
+            # print(mutual_information[i, j])
         if correction:
             mutual_information -= np.min(mutual_information)
         return mutual_information
 
-
-    def generalized_correlation_coefficient(self, cmatrix=None, 
-                                            mutual_information=None, 
+    def generalized_correlation_coefficient(self, cmatrix=None,
+                                            mutual_information=None,
                                             **kwargs):
         """Computes generalized correlation coefficient"""
         if mutual_information is None:
@@ -448,12 +447,12 @@ class MultiFeatures(Features):
                 # Getting nonzero elements only in upper triangle matrix
                 nnz = pd.unique([tuple(sorted((i, j)))
                                 for i, j in zip(*cmatrix.nonzero())]).tolist()
-                
+
                 mutual_information = self._get_mutual_information(subset=nnz,
-                                                                    **kwargs)
+                                                                  **kwargs)
         df = None
         for label, MI in mutual_information.items():
-            rMI = np.sqrt(1-np.exp(-2*MI/(self.n_descriptors)))
+            rMI = np.sqrt(1 - np.exp(-2 * MI / (self.n_descriptors)))
             if cmatrix is not None:
                 cmatrix = cmatrix.astype(rMI.dtype)
                 rMI = np.multiply(rMI, cmatrix)
@@ -468,14 +467,14 @@ class MultiFeatures(Features):
 
 
 def digamma_n(x, e, offset=1):
-    """Computes the average digamma of the number of points between x at a 
+    """Computes the average digamma of the number of points between x at a
     distance e. Used in the k-nn estimator for correlation."""
 
     tree = KDTree(x, metric='chebyshev')
-    # We need to cheat using e-1e-10 so that we don't count kth neighbor 
+    # We need to cheat using e-1e-10 so that we don't count kth neighbor
     # and finding in which dimension(s) the kth neighbor reaches e is too
     # expensive
-    num_points = tree.query_radius(x, e-1e-10, count_only=True)
+    num_points = tree.query_radius(x, e - 1e-10, count_only=True)
 
     # Removing a count for self only if it is not null
     num_points = num_points[num_points.nonzero()] - 1

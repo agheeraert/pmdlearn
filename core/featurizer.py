@@ -45,6 +45,7 @@ class MDFeaturizer():
     n_residues
 
     """
+
     def __init__(self, topo, traj=None, begin=None, end=None, stride=None,
                  label=None, replica=None, align=True):
         self.traj = traj
@@ -66,7 +67,7 @@ class MDFeaturizer():
     def _align(self):
         """Aligns trajectories before featurization. Please note this step is
         long and useless when featurizing internal features."""
-        if type(self.traj) is not None:
+        if not isinstance(self.traj, None):
             mobile = mda.Universe(self.topo, self.traj)
             ref = mda.Universe(self.topo, self.traj)
         else:
@@ -75,7 +76,6 @@ class MDFeaturizer():
         aligner = align.AlignTraj(mobile, ref,
                                   select="backbone").run()
         return mobile
-
 
     def atomic_displacements(self, selection="name CA"):
         """Featurize atomic positions.
@@ -90,7 +90,7 @@ class MDFeaturizer():
         values -= avg
         indices = self.universe.select_atoms(selection).residues.resindices
         return MultiFeatures(values, indices, 'atomic_positions', self.label,
-                          self.replica, descriptor_labels=['x', 'y', 'z'])
+                             self.replica, descriptor_labels=['x', 'y', 'z'])
 
     def backbone_dihedrals(self, selection="protein"):
         """Featurize phi and psi backbone dihedral angles
@@ -108,10 +108,10 @@ class MDFeaturizer():
         indices = np.stack([r.ag1.residues.resindices,
                             r.ag4.residues.resindices], axis=-1)
         return MultiFeatures(values, indices, "backbone dihedrals", self.label,
-                          self.replica, descriptor_labels=descriptor_labels)
+                             self.replica, descriptor_labels=descriptor_labels)
 
     def contacts(self, selection="not name H*", selection2=None, cutoff=5.,
-                 prevalence=None, expected=False, entangled=False, 
+                 prevalence=None, expected=False, entangled=False,
                  parallel=False):
         """Featurize contacts
 
@@ -122,7 +122,7 @@ class MDFeaturizer():
         Default is removing hydrogens
 
         selection2: str or None, default=None
-        If not None, second selection to compute contacts. Uses MDAnalysis 
+        If not None, second selection to compute contacts. Uses MDAnalysis
         selection commands
 
         cutoff: float, default=5
@@ -136,11 +136,11 @@ class MDFeaturizer():
         Divide the contact number by the counts of atom in each residue.
 
         entangled: bool, default=False
-        Computes an entangled contact network model (i.e. backbone and 
+        Computes an entangled contact network model (i.e. backbone and
         sidechain) are separated. Experimental.
 
         parallel: bool or int, default=False
-        If 0 or 1, runs a sequential script. If int > 1, runs a parallel 
+        If 0 or 1, runs a sequential script. If int > 1, runs a parallel
         script
 
         """
@@ -151,15 +151,15 @@ class MDFeaturizer():
             selection += '_{}'.format(selection2)
 
         # Create dictionnary with atom to residue correspondance
-        if not entangled: 
+        if not entangled:
             self.atom2res = {atom.index: atom.residue.resindex
-                            for atom in self.universe.atoms}
+                             for atom in self.universe.atoms}
         else:
             self.atom2res = {atom.index: 2 * atom.residue.resindex
-                             for atom in 
+                             for atom in
                              self.universe.select_atoms('backbone')}
-            self.atom2res.update({atom.index: 2* atom.residue.resindex + 1
-                                  for atom in 
+            self.atom2res.update({atom.index: 2 * atom.residue.resindex + 1
+                                  for atom in
                                   self.universe.select_atoms('not backbone')})
 
         # Gets first selection and its indexing in the protein
@@ -172,10 +172,11 @@ class MDFeaturizer():
             self.ix2 = np.array(self.s2.atoms.indices)
 
         res1, res2, data, times = list(), list(), list(), list()
-        
+
         # Iterates over frames to compute contacts
         if int(parallel) <= 1:
-            for _t, ts in enumerate(tqdm(self.universe.trajectory[self.slice])):
+            for _t, ts in enumerate(
+                    tqdm(self.universe.trajectory[self.slice])):
                 if selection2 is None:
                     pairs = self._contacts_sym()
                 else:
@@ -185,28 +186,31 @@ class MDFeaturizer():
                 pairs_res = np.array(
                     [self.atom2res[x] for x in U])[inv].reshape(pairs.shape)
                 unique_pairs, counts = np.unique(pairs_res, axis=1,
-                                                return_counts=True)
+                                                 return_counts=True)
                 # Stores information in four different lists
                 res1.append(unique_pairs[0])
                 res2.append(unique_pairs[1])
                 data.append(counts)  # Number of contact
                 times.append(np.array(
-                    [_t]*unique_pairs.shape[1]))  # Timestep
+                    [_t] * unique_pairs.shape[1]))  # Timestep
         else:
             # Checking cpu number to avoid creating too many processes
             n_cpu = min(mp.cpu_count(), parallel)
             with mp.Manager() as manager:
                 shared_data = manager.list()
                 processes = []
-                for _t, ts in enumerate(tqdm(self.universe.trajectory[self.slice])):
+                for _t, ts in enumerate(
+                        tqdm(self.universe.trajectory[self.slice])):
                     if selection2 is None:
-                        p = mp.Process(target=self._contacts_sym_parallel, 
-                                       args=(shared_data, self.s1.positions,_t,))                    
+                        p = mp.Process(target=self._contacts_sym_parallel,
+                                       args=(shared_data,
+                                             self.s1.positions,
+                                             _t,))
                     else:
-                        p = mp.Process(target=self._contacts_asym_parallel, 
-                                       args=(shared_data, 
-                                             self.s1.positions, 
-                                             self.s2.positions, 
+                        p = mp.Process(target=self._contacts_asym_parallel,
+                                       args=(shared_data,
+                                             self.s1.positions,
+                                             self.s2.positions,
                                              _t,))
                     p.start()
                     processes.append(p)
@@ -218,8 +222,7 @@ class MDFeaturizer():
                 data = [t[2] for t in shared_data]
                 times = [t[3] for t in shared_data]
 
-
-        res1, res2, data, times = [np.concatenate(arr) for arr in 
+        res1, res2, data, times = [np.concatenate(arr) for arr in
                                    [res1, res2, data, times]]
 
         contacts = np.stack([res1, res2], axis=-1)
@@ -229,7 +232,7 @@ class MDFeaturizer():
             to_k = np.where(res1 != res2)[0]
             contacts, times, data = contacts[to_k], times[to_k], data[to_k]
 
-        else: # Removing other intraresidual contacts
+        else:  # Removing other intraresidual contacts
             to_k = np.where(res1 // 2 != res2 // 2)[0]
             contacts, times, data = contacts[to_k], times[to_k], data[to_k]
 
@@ -245,21 +248,21 @@ class MDFeaturizer():
 
         def get_div(sel):
             _, counts = np.unique([atom.resindex for atom in sel.atoms],
-                                    return_counts=True)
-            div = np.zeros((np.max(_)+1))
+                                  return_counts=True)
+            div = np.zeros((np.max(_) + 1))
             div[_] = counts
             return div
-        
+
         def get_div_entangled(sel):
-            _b, counts_b = np.unique([atom.resindex for atom in 
+            _b, counts_b = np.unique([atom.resindex for atom in
                                       sel.select_atoms('backbone').atoms],
-                                      return_counts=True)
-            _s, counts_s = np.unique([atom.resindex for atom in 
+                                     return_counts=True)
+            _s, counts_s = np.unique([atom.resindex for atom in
                                       sel.select_atoms('not backbone').atoms],
-                                      return_counts=True)
-            div = np.zeros((2*np.max(np.concatenate([_b, _s]))+2))
-            div[2*_b] = counts_b
-            div[2*_s+1] = counts_s
+                                     return_counts=True)
+            div = np.zeros((2 * np.max(np.concatenate([_b, _s])) + 2))
+            div[2 * _b] = counts_b
+            div[2 * _s + 1] = counts_s
             return div
 
         # If expected normalization we create the appropriate dividers
@@ -292,7 +295,7 @@ class MDFeaturizer():
             binary_contacts = np.zeros_like(values)
             binary_contacts[values.nonzero()] = 1
             ix = np.where(np.sum(binary_contacts, axis=0) >
-                          prevalence*self.n_frames)[0]
+                          prevalence * self.n_frames)[0]
             cmatrix = np.zeros((self.n_residues, self.n_residues),
                                dtype=np.bool_)
             row, col = unique_contacts[ix].T
@@ -300,9 +303,9 @@ class MDFeaturizer():
             cmatrix[col, row] = 1
             self.cmatrix = cmatrix
             return feat, cmatrix
-        
+
         # General case
-        
+
         else:
             return feat
 
@@ -327,9 +330,10 @@ class MDFeaturizer():
     def _contacts_sym_parallel(self, shared_data, pos, t):
         """Uses built-in MDAnalysis function to get interacting pairs in
         symmetric selection with parallel algrithm"""
-        pairs = self_capped_distance(pos, self.cutoff, 
-                                    return_distances=False)
-        self._parallel_append(shared_data, np.sort(self.ix1[pairs], axis=1).T, t)
+        pairs = self_capped_distance(pos, self.cutoff,
+                                     return_distances=False)
+        self._parallel_append(shared_data, np.sort(
+            self.ix1[pairs], axis=1).T, t)
 
     def _contacts_asym_parallel(self, shared_data, pos1, pos2, t):
         pairs = capped_distance(pos1, pos2,
@@ -347,21 +351,20 @@ class MDFeaturizer():
         pairs_res = np.array(
             [self.atom2res[x] for x in U])[inv].reshape(pairs.shape)
         unique_pairs, counts = np.unique(pairs_res, axis=1,
-                                        return_counts=True)
-        shared_data.append((unique_pairs[0], 
-                     unique_pairs[1], 
-                     counts, 
-                     np.array([t]*unique_pairs.shape[1])))
-
+                                         return_counts=True)
+        shared_data.append((unique_pairs[0],
+                            unique_pairs[1],
+                            counts,
+                            np.array([t] * unique_pairs.shape[1])))
 
     def get_reslist(self, selection="protein", chain_labels=None):
         """Creates list of residues of the trajectory
-        Parameters: 
+        Parameters:
 
         selection: str, default="protein"
-        Selection to consider as "residues". Uses MDAnalysis selection commands.
-        Default is taking the full protein
-        
+        Selection to consider as "residues". Uses MDAnalysis selection
+        commands. Default is taking the full protein
+
         chain_labels: tuple of str or None
         Custom label for chains. Appended at the end. Default is A,B,C,...
         """
@@ -376,5 +379,5 @@ class MDFeaturizer():
         seg2lab = dict(zip(unique_chains, chain_labels))
         # Crushing older segid
         segids = np.array([seg2lab[res] for res in segids])
-        return ['{}{}:{}'.format(resn, resi, seg) 
+        return ['{}{}:{}'.format(resn, resi, seg)
                 for resn, resi, seg in zip(resnames, resids, segids)]

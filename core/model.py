@@ -12,6 +12,7 @@ class Model():
     """
 
     """
+
     def __init__(self, kind=PCA, **kwargs):
         self.ca = kind(**kwargs)
         self.kind = kind
@@ -23,7 +24,7 @@ class Model():
     def scatter_dataframe(self, X_new):
         self.X_new = X_new
         self.n_components = X_new.shape[1]
-        df = pd.DataFrame({'C{}'.format(i+1): component
+        df = pd.DataFrame({'C{}'.format(i + 1): component
                            for i, component in enumerate(X_new.T)})
         df['labels'] = self.labels
         self.dataframe = df
@@ -33,12 +34,13 @@ class Model():
             fig, ax = plt.subplots(1, 1)
         try:
             sns.kdeplot(data=self.dataframe, x=x, y=y, hue=self.labels, ax=ax,
-                    common_norm=False, **kwargs)
+                        common_norm=False, **kwargs)
         except np.linalg.LinAlgError:
-            sns.scatterplot(data=self.dataframe, x=x, y=y, hue=self.labels, 
+            sns.scatterplot(data=self.dataframe, x=x, y=y, hue=self.labels,
                             ax=ax, marker='+', **kwargs)
         try:
-            sns.move_legend(ax, loc='lower left', bbox_to_anchor=(0, 1), ncol=4)
+            sns.move_legend(ax, loc='lower left',
+                            bbox_to_anchor=(0, 1), ncol=4)
         except ValueError:
             pass
         ax.grid('--')
@@ -61,37 +63,37 @@ class Model():
         if len(self.indices.shape) < 2 or self.indices.shape[1] == 1:
             dic_labels = {'indices': self.indices.flatten()}
         else:
-            dic_labels = {'node{}'.format(i+1): self.indices[:, i]
-                               for i in range(self.indices.shape[1])}
-        dic_compo = {'C{}'.format(i+1): elt for i, elt in enumerate(c)}
+            dic_labels = {'node{}'.format(i + 1): self.indices[:, i]
+                          for i in range(self.indices.shape[1])}
+        dic_compo = {'C{}'.format(i + 1): elt for i, elt in enumerate(c)}
         dic_labels.update(dic_compo)
         df = pd.DataFrame(dic_labels)
         return df
 
     def get_optimal_ward_clusters(self, fig=None):
-        l = ward(self.X_new)
+        links = ward(self.X_new)
         Z_tail = linkage(self.X_new, 'ward')[-10:, 2]
         acceleration = np.diff(Z_tail, 2)
         self.n_optimal_ward = acceleration[::-1].argmax() + 2
         if fig is not None:
-            self._plot_optimal(fig, l, Z_tail)
+            self._plot_optimal(fig, links, Z_tail)
             return fig
 
-    def _plot_optimal(self, fig, l, Z_tail):
+    def _plot_optimal(self, fig, links, Z_tail):
         axes = fig.get_axes()
         idxs = np.arange(1, len(Z_tail) + 1)
         lns1 = axes[1].plot(idxs, Z_tail[::-1], label='height', marker='+')
         acceleration = np.diff(Z_tail, 2)
         thresh = Z_tail[self.n_optimal_ward]
-        dendrogram(l, no_labels=True, count_sort='descendent', ax=axes[0],
-                   color_threshold=thresh+1)
+        dendrogram(links, no_labels=True, count_sort='descendent', ax=axes[0],
+                   color_threshold=thresh + 1)
 
         ax2 = axes[1].twinx()
         lns2 = ax2.plot(idxs[:-2] + 1, acceleration[::-1],
                         label='acceleration', marker='+', color='r')
 
-        lns = lns1+lns2
-        labs = [l.get_label() for l in lns]
+        lns = lns1 + lns2
+        labs = [ln.get_label() for ln in lns]
         axes[1].legend(lns, labs, loc='best')
         axes[1].set_xlabel('Number of clusters')
         axes[0].set_xlabel('Clusters')
@@ -123,7 +125,7 @@ class Model():
             ax.scatter(x=self.X_new[ix, c1], y=self.X_new[ix, c2], marker='+',
                        linewidth=1, color=cmap(i))
             m.append(mlines.Line2D([], [], marker='+',
-                     markersize=10, label='Cluster {}'.format(i+1),
+                     markersize=10, label='Cluster {}'.format(i + 1),
                      color=cmap(i)))
             self.percentage_cluster.append(perc_dict)
             i += 1
