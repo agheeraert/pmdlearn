@@ -13,7 +13,7 @@ import matplotlib as mpl
 mpl.use('Qt5Agg')
 
 
-def minus_log(x):
+def minus_log(mat):
     """Function performing a -np.log to compute distances from input matrix.
     Rescales the matrix if positive but not in the [0-1[ interval.
     Raise error for negative values.
@@ -28,20 +28,25 @@ def minus_log(x):
     y: array_like of same size than x
     Distance matrix
     """
-    x.fillna(0, inplace=True)
+    if isinstance(mat, pd.DataFrame):
+        mat.fillna(0, inplace=True)
+        mat = mat.values
 
-    if np.all(0 <= x.all() < 1):
-        return -np.log(x)
+    if (0 <= mat).all() and (mat <= 1).all():
+        return -np.log(mat)
     else:
         warnings.warn("Values not in [0-1[ range, Rescaling to this range")
-        if np.all(0 <= x):
+        if np.all(0 <= mat):
             # We impose x != 1 by adding a small eps to the max
             # This is not a problem to compute log but we don't want a
             # 0 distance
-            x = x / (np.max(x) + 1e-6)
-            return -np.log(x)
+            mat = mat / (np.max(mat) + 1e-5)
+            return -np.log(mat)
         else:
-            raise ValueError(x)
+            warnings.warn("Array has negative values, forcing positivity")
+            mat = np.abs(mat)
+            mat = mat / (np.max(mat) + 1e-5)
+            return -np.log(mat)
 
 
 def isfloat(value):
@@ -183,7 +188,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     r = np.argsort(vps)[::-1]
     if color_compo:
         node2compo = {}
-        for i, color in zip(r, sns.color_palette("bright", len(r))):
+        for i, color in zip(r, get_best_palette(len(r))):
             for a in components_list[i]:
                 node2compo[a] = color
         df['color'] = df['node1'].map(node2compo)
@@ -248,10 +253,12 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
     "Allosteric pathways in imidazole glycerol phosphate synthase."
     Proc. Natl. Acad. Sci. 109.22 (2012): E1428-E1436.
     """
-
     if dist_func is not None:
-        df['_{}'.format(weight)] = dist_func(df[weight])
-        old_weights = df[weight]
+        old_weights = {(u, v): w for u, v, w in zip(df[source],
+                                                    df[target],
+                                                    df[weight])}
+
+        df['_{}'.format(weight)] = dist_func(df[weight].values)
         net = nx.from_pandas_edgelist(df.dropna(),
                                       source=source,
                                       target=target,
@@ -261,22 +268,20 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
                                       source=source,
                                       target=target,
                                       edge_attr=weight)
-
     net.remove_nodes_from(list(nx.isolates(net)))
     comp = girvan_newman(net)
     max_modularity = 0
+    out_communities = None
+    w = list(list(net.edges(data=True))[0][2].keys())[0]
     for communities in comp:
-        mod = modularity(net, communities, weight=weight)
+        mod = modularity(net, communities, weight=w)
         if mod >= max_modularity:
             out_communities = communities
             max_modularity = mod
     communities_list = [nx.subgraph(net, c).copy() for c in out_communities]
     if color_compo:
         n_colors = len(communities_list)
-        if len(communities_list) <= 10:
-            palette = sns.color_palette("bright", n_colors=n_colors)
-        else:
-            palette = sns.color_palette("husl", n_colors=n_colors)
+        palette = get_best_palette(n_colors)
         i2color = dict(enumerate(palette))
         node2compo = {}
         df = nx.to_pandas_edgelist(net, source=source, target=target)
@@ -294,11 +299,21 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
         df['community2'] = df['community2'].map(lambda i: 'C{}'.format(i + 1))
 
     if dist_func is not None:
-        df[weight] = old_weights
+        def get_weights(x):
+            if (x[source], x[target]) in old_weights:
+                return old_weights[(x[source], x[target])]
+            elif (x[target], x[source]) in old_weights:
+                return old_weights[(x[target], x[source])]
+            else:
+                warnings.warn("Weight not found")
+                return 0
+
+        df[weight] = df.apply(get_weights, axis=1)
         if plot_betweenness:
             b = nx.edge_betweenness_centrality(net,
                                                weight='_{}'.format(weight))
             df[weight] = b.values()
+
     return df
 
 
@@ -321,6 +336,20 @@ def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
         cmd.set_view(view)
     if hide_nodes:
         cmd.disable('*nodes')
+
+
+def get_best_palette(n_colors):
+    if n_colors < 8:
+        palette = sns.color_palette('bright', n_colors=n_colors)
+
+    elif 8 <= n_colors <= 9:
+        palette = sns.color_palette('bright', n_colors=n_colors+1)
+        palette.__delitem__(7)
+
+    else:
+        palette = sns.color_palette('husl', n_colors=n_colors)
+
+    return palette
 
 
 def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
@@ -420,7 +449,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
-         plot_betweenness=False, remove_intracomm=False):
+         plot_betweenness=False, remove_intracomm=False, standard_diff=True,
+         cut_diam=3):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -441,7 +471,10 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         print(len(nodes), len(nodes_df))
         if len(nodes) == len(nodes_df):
             print('Auto_patching working (length of lists)')
-            return nodes_df
+            if isinstance(nodes_df[0], (int, np.integer)):
+                return np.sort(nodes_df)
+            else:
+                return nodes_df
         else:
             def _cutint(_):
                 try:
@@ -525,7 +558,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     if not isinstance(w1, type(None)) and not isinstance(w2, type(None)):
         weight = '{}-{}'.format(w2, w1)
         df[weight] = df[w2] - df[w1]
-    df = df.loc[df[weight] != 0]
+    df = df.loc[(df[weight] != 0)]  # Is the exception thrown here?
     if not all(node in nodes for node in nodes_df):
         if auto_patch:
             nodes = _auto_patch(nodes, nodes_df)
@@ -544,7 +577,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             print(''.join('{} colored in {}; '.format(u, v)
                   for u, v in zip(attributes, palette)))
         else:
-            palette = sns.color_palette("bright", n_colors)
+            palette = get_best_palette(n_colors)
         attr2color = dict(zip(attributes, palette))
         df['color'] = df[color_by].map(attr2color)
 
@@ -563,50 +596,51 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         def weight2color(X): return color1 if X >= 0 else color2
         df['color'] = df[weight].map(weight2color)
     else:
-        df['color'] = [base_color] * len(df['node1'])
+        if 'color' not in df.columns:
+            df['color'] = [base_color] * len(df['node1'])
 
     # Apply threshold/topk/cca on weight
     if isinstance(threshold, (int, float, complex)):
-        df = df.loc[df[weight].abs() >= threshold]
+        df = df.loc[df[weight].abs() >= threshold]  # thrown here?
     elif isinstance(threshold, str):
         if threshold in df.columns:
-            df = df.loc[df[weight].abs() >= df[threshold]]
+            df = df.loc[df[weight].abs() >= df[threshold]]  # here?
         else:
             w2, w1 = threshold.split('-')
             df[threshold] = df[w2] - df[w1]
-            df = df.loc[df[weight].abs() >= df[threshold].abs()]
+            df = df.loc[df[weight].abs() >= df[threshold].abs()]  # here?
     if topk:
         df = df.loc[df[weight].abs().sort_values(ascending=False).
-                    head(n=topk).index]
+                    head(n=topk).index]  # here?
     if cca:
         df = get_cca(df,
                      weight,
                      smaller_max=smaller_max,
-                     color_compo=color_compo)
+                     color_compo=color_compo,
+                     cut_diam=cut_diam)
 
     if girvan_newman:
-        if w1 is None and w2 is None:
-            df = get_girvan_newman(df,
-                                   weight,
+        if (w1 is None and w2 is None) or standard_diff:
+            df = get_girvan_newman(df=df,
+                                   weight=weight,
                                    color_compo=color_compo,
                                    dist_func=dist_func,
                                    plot_betweenness=plot_betweenness)
         else:
-            _df = df.copy()
-            df = get_girvan_newman(df,
-                                   w1,
-                                   color_compo=color_compo,
-                                   dist_func=dist_func,
-                                   plot_betweenness=plot_betweenness)
-
-            df2 = get_girvan_newman(_df,
-                                    w2,
+            _df = get_girvan_newman(df=df.copy(),
+                                    weight=w1,
                                     color_compo=color_compo,
                                     dist_func=dist_func,
                                     plot_betweenness=plot_betweenness)
 
+            _df2 = get_girvan_newman(df=df.copy(),
+                                     weight=w2,
+                                     color_compo=color_compo,
+                                     dist_func=dist_func,
+                                     plot_betweenness=plot_betweenness)
+
             weight = '{}-{}'.format(w2, w1)
-            df[weight] = df2[w2] - df[w1]
+            _df[weight] = _df2[w2] - _df[w1]
 
             def f(x, y):
                 if x == y:
@@ -614,11 +648,13 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                 else:
                     return '{}->{}'.format(x, y)
             vecF = np.vectorize(f)
-            loc = (df['community1'] != df2['community1'])
-            df['community1'] = pd.DataFrame(vecF(df['community1'],
-                                                 df2['community1']))
-            df['community2'] = pd.DataFrame(vecF(df['community2'],
-                                                 df2['community2']))
+            loc = (_df['community1'] != _df2['community1'])
+
+            _df['community1'] = pd.DataFrame(vecF(_df['community1'],
+                                                  _df2['community1']))
+            _df['community2'] = pd.DataFrame(vecF(_df['community2'],
+                                                  _df2['community2']))
+            df = _df
 
         group_by = 'community1'
         if remove_intracomm:
