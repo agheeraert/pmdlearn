@@ -112,7 +112,7 @@ class MDFeaturizer():
 
     def contacts(self, selection="not name H*", selection2=None, cutoff=5.,
                  prevalence=None, expected=False, entangled=False,
-                 parallel=False):
+                 parallel=False, **kwargs):
         """Featurize contacts
 
         Parameters:
@@ -178,9 +178,9 @@ class MDFeaturizer():
             for _t, ts in enumerate(
                     tqdm(self.universe.trajectory[self.slice])):
                 if selection2 is None:
-                    pairs = self._contacts_sym()
+                    pairs = self._contacts_sym(**kwargs)
                 else:
-                    pairs = self._contacts_asym()
+                    pairs = self._contacts_asym(**kwargs)
                 U, inv = np.unique(pairs, return_inverse=True)
                 # Translates atomic contact info in residue contact info
                 pairs_res = np.array(
@@ -199,19 +199,22 @@ class MDFeaturizer():
             with mp.Manager() as manager:
                 shared_data = manager.list()
                 processes = []
+                kw = kwargs.get()
                 for _t, ts in enumerate(
                         tqdm(self.universe.trajectory[self.slice])):
                     if selection2 is None:
                         p = mp.Process(target=self._contacts_sym_parallel,
                                        args=(shared_data,
                                              self.s1.positions,
-                                             _t,))
+                                             _t,),
+                                       kwargs=(kw,))
                     else:
                         p = mp.Process(target=self._contacts_asym_parallel,
                                        args=(shared_data,
                                              self.s1.positions,
                                              self.s2.positions,
-                                             _t,))
+                                             _t,),
+                                       kwargs=(kw,))
                     p.start()
                     processes.append(p)
 
@@ -309,35 +312,35 @@ class MDFeaturizer():
         else:
             return feat
 
-    def _contacts_sym(self):
+    def _contacts_sym(self, **kwargs):
         """Uses built-in MDAnalysis function to get interacting pairs in
         symmetric selection"""
         pairs = self_capped_distance(self.s1.positions, self.cutoff,
-                                     return_distances=False)
+                                     return_distances=False, **kwargs)
         return np.sort(self.ix1[pairs], axis=1).T
 
-    def _contacts_asym(self):
+    def _contacts_asym(self, **kwargs):
         """Uses built-in MDAnalysis function to get interacting pairs in
         asymmetric selection"""
         pairs = capped_distance(self.s1.positions, self.s2.positions,
-                                self.cutoff, return_distances=False)
+                                self.cutoff, return_distances=False, **kwargs)
         pairs = np.stack([self.ix1[pairs[:, 0]], self.ix2[pairs[:, 1]]])
         # Removing duplicates
         pairs = np.sort(pairs, axis=1)
         pairs = np.unique(pairs, axis=1)
         return pairs
 
-    def _contacts_sym_parallel(self, shared_data, pos, t):
+    def _contacts_sym_parallel(self, shared_data, pos, t, **kwargs):
         """Uses built-in MDAnalysis function to get interacting pairs in
         symmetric selection with parallel algrithm"""
-        pairs = self_capped_distance(pos, self.cutoff,
-                                     return_distances=False)
+        pairs = self_capped_distance(pos, self.cutoff, return_distances=False,
+                                     **kwargs)
         self._parallel_append(shared_data, np.sort(
             self.ix1[pairs], axis=1).T, t)
 
-    def _contacts_asym_parallel(self, shared_data, pos1, pos2, t):
-        pairs = capped_distance(pos1, pos2,
-                                self.cutoff, return_distances=False)
+    def _contacts_asym_parallel(self, shared_data, pos1, pos2, t, **kwargs):
+        pairs = capped_distance(pos1, pos2, self.cutoff, 
+                                return_distances=False, **kwargs)
         pairs = np.stack([self.ix1[pairs[:, 0]], self.ix2[pairs[:, 1]]])
         # Removing duplicates
         pairs = np.sort(pairs, axis=1)
