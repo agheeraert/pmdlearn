@@ -10,6 +10,9 @@ from pymol.cgo import *
 import pandas as pd
 from scipy.sparse.dok import dok_matrix
 import matplotlib as mpl
+import pickle5 as pkl5
+import matplotlib.pyplot as plt
+from copy import deepcopy
 mpl.use('Qt5Agg')
 
 
@@ -47,6 +50,13 @@ def minus_log(mat):
             mat = np.abs(mat)
             mat = mat / (np.max(mat) + 1e-5)
             return -np.log(mat)
+
+
+def load_df(df):
+    try:
+        return pd.read_pickle(df)
+    except ValueError:
+        return pkl5.load(open(df, 'rb'))
 
 
 def isfloat(value):
@@ -110,7 +120,8 @@ def create_topmat(sele, top, map_indexes, map_residues):
 
 
 def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
-            smaller_max=False, color_compo=False):
+            smaller_max=False, color_compo=False, connect_backbone=False,
+            plot_cca=None):
     """Internal function that performs connected component analysis on a
     given network.
     Parameters
@@ -139,6 +150,13 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     color_compo: bool, default=False
     Toggles coloring by connected components
 
+    connect_backbone: bool, default=False
+    Toggles backbone connection during Connected Component Analysis
+
+    plot_cca: str or None, default=None
+    If different than None, is the output path for plotting the number of
+    connected components in function of the threshold
+
     Output
     ---------
     df: pandas.DataFrame
@@ -154,15 +172,34 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     net.remove_nodes_from(list(nx.isolates(net)))
     edge_list = sorted(net.edges(data=True),
                        key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
+    elist = deepcopy(edge_list)
     connected_components = [[nx.number_connected_components(net), 0]]
 
     while len(net.nodes()) != 0:
         u, v, dic = edge_list.pop()
         net.remove_edge(u, v)
         net.remove_nodes_from(list(nx.isolates(net)))
-        connected_components.append([nx.number_connected_components(net),
-                                     abs(dic.get(weight, 1))])
+        if connect_backbone:
+            nbunch = np.sort(list(net.nodes()))
+            ebunch = list(net.edges())
+            edges_to_add = [(u, v, {weight: 1e-10})
+                            for u, v in zip(nbunch[:-1], nbunch[1:])
+                            if abs(u-v) == 1 and (u, v) not in ebunch]
+
+            _net = net.copy()
+            _net.add_edges_from(edges_to_add)
+            connected_components.append([nx.number_connected_components(_net),
+                                         abs(dic.get(weight, 1))])
+        else:
+            connected_components.append([nx.number_connected_components(net),
+                                         abs(dic.get(weight, 1))])
     connected_components = np.array(connected_components)
+
+    if plot_cca is not None:
+        plt.plot(connected_components[:, 1],
+                 connected_components[:, 0])
+        plt.savefig(plot_cca)
+        plt.close()
     m = np.argmax(connected_components[::-1, 0])
     if smaller_max:
         smaller_max = connected_components[-m, 0] - smaller_max
@@ -173,6 +210,15 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     df = df.loc[df[weight].abs() > threshold]
     net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
+    if connect_backbone:
+        nbunch = np.sort(list(net.nodes()))
+        ebunch = list(net.edges())
+        edges_to_add = [(u, v, {weight: 1e-10})
+                        for u, v in zip(nbunch[:-1], nbunch[1:])
+                        if abs(u-v) == 1 and (u, v) not in ebunch]
+
+        net.add_edges_from(edges_to_add)
+
     components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
     if cut_diam > 0:
@@ -330,7 +376,7 @@ def draw_Network(path, reset_view=True, hide_nodes=True, **kwargs):
 
 def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
     view = cmd.get_view()
-    df = pd.read_pickle(path)
+    df = load_df(path)
     draw(df, **kwargs)
     if reset_view:
         cmd.set_view(view)
@@ -450,7 +496,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
-         cut_diam=3):
+         cut_diam=3, connect_backbone=False, plot_cca=None):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -555,7 +601,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
 
     nodes_df = pd.unique(df[['node1', 'node2']].values.ravel('K'))
 
-    if not isinstance(w1, type(None)) and not isinstance(w2, type(None)):
+    if w1 is not None and w2 is not None:
         weight = '{}-{}'.format(w2, w1)
         df[weight] = df[w2] - df[w1]
     df = df.loc[(df[weight] != 0)]  # Is the exception thrown here?
@@ -613,11 +659,16 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         df = df.loc[df[weight].abs().sort_values(ascending=False).
                     head(n=topk).index]  # here?
     if cca:
+        group_compo = True
+        if not color_sign and not color_compo:
+            color_compo = True
         df = get_cca(df,
                      weight,
                      smaller_max=smaller_max,
                      color_compo=color_compo,
-                     cut_diam=cut_diam)
+                     cut_diam=cut_diam,
+                     connect_backbone=connect_backbone,
+                     plot_cca=plot_cca)
 
     if girvan_newman:
         if (w1 is None and w2 is None) or standard_diff:
@@ -694,6 +745,14 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                                       source="node1",
                                       target="node2",
                                       edge_attr=True)
+        if connect_backbone:
+            nbunch = np.sort(list(net.nodes()))
+            ebunch = list(net.edges())
+            edges_to_add = [(u, v, {weight: 1e-10})
+                            for u, v in zip(nbunch[:-1], nbunch[1:])
+                            if abs(u-v) == 1 and (u, v) not in ebunch]
+            net = net.copy()
+            net.add_edges_from(edges_to_add)
 
         compo = {
             i: list(c) for i,
@@ -798,7 +857,7 @@ def draw_df_nodes(df, key="node", weight='weight', colors=['red', 'blue'],
                   base_selection='name N+H', r=1, labeling=False,
                   keep_previous=False, show_unassigned=False):
 
-    df = pd.read_pickle(df)
+    df = load_df(df)
 
     def v2color(X):
         return colors[0] if X >= 0 else colors[1]
@@ -838,7 +897,7 @@ def continuous_color(df, key="node", weight="weight", w1=None, w2=None,
                      base_selection='name CA', palette='blue_white_red',
                      selection="polymer"):
 
-    df = pd.read_pickle(df)
+    df = load_df(df)
     try:
         def to_selection(X):
             return "{} and resi {} and chain {}".\
@@ -881,7 +940,7 @@ def _color(scores, selection, palette="blue_white_red"):
 def continuous_color_from_df(df, source="node1", target="node2",
                              weight='weight', base_selection='name CA',
                              palette='blue_white_red'):
-    df = pd.read_pickle(df)
+    df = load_df(df)
 
     def to_selection(X):
         return "{} and resi {} and chain {}".\
