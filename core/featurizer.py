@@ -67,7 +67,7 @@ class MDFeaturizer():
     def _align(self):
         """Aligns trajectories before featurization. Please note this step is
         long and useless when featurizing internal features."""
-        if not isinstance(self.traj, None):
+        if self.traj is not None:
             mobile = mda.Universe(self.topo, self.traj)
             ref = mda.Universe(self.topo, self.traj)
         else:
