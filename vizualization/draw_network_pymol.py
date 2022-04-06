@@ -121,7 +121,7 @@ def create_topmat(sele, top, map_indexes, map_residues):
 
 def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
             smaller_max=False, color_compo=False, connect_backbone=False,
-            plot_cca=None):
+            plot_cca=None, impose_palette=None):
     """Internal function that performs connected component analysis on a
     given network.
     Parameters
@@ -234,7 +234,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     r = np.argsort(vps)[::-1]
     if color_compo:
         node2compo = {}
-        for i, color in zip(r, get_best_palette(len(r))):
+        for i, color in zip(r, get_best_palette(len(r), impose_palette=impose_palette)):
             for a in components_list[i]:
                 node2compo[a] = color
         df['color'] = df['node1'].map(node2compo)
@@ -244,7 +244,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
 
 def get_girvan_newman(df, weight='weight', source='node1', target='node2',
                       color_compo=True, dist_func=minus_log,
-                      plot_betweenness=False):
+                      plot_betweenness=False, impose_palette=None):
     """Internal function that performs community analysis using a girvan
     newman community decomposition optimizing the modularity measure.
 
@@ -327,7 +327,7 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
     communities_list = [nx.subgraph(net, c).copy() for c in out_communities]
     if color_compo:
         n_colors = len(communities_list)
-        palette = get_best_palette(n_colors)
+        palette = get_best_palette(n_colors, impose_palette)
         i2color = dict(enumerate(palette))
         node2compo = {}
         df = nx.to_pandas_edgelist(net, source=source, target=target)
@@ -384,7 +384,13 @@ def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
         cmd.disable('*nodes')
 
 
-def get_best_palette(n_colors):
+def get_best_palette(n_colors, impose_palette=None):
+    if impose_palette:
+        if n_colors > len(impose_palette):
+            warnings.warn('Not enough colors in custom palette. Using default\
+                           palettes')
+        else:
+            return impose_palette[:n_colors]
     if n_colors < 8:
         palette = sns.color_palette('bright', n_colors=n_colors)
 
@@ -396,6 +402,7 @@ def get_best_palette(n_colors):
         palette = sns.color_palette('husl', n_colors=n_colors)
 
     return palette
+
 
 
 def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
@@ -496,7 +503,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
-         cut_diam=3, connect_backbone=False, plot_cca=None):
+         cut_diam=3, connect_backbone=False, plot_cca=None, impose_palette=None):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -623,7 +630,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             print(''.join('{} colored in {}; '.format(u, v)
                   for u, v in zip(attributes, palette)))
         else:
-            palette = get_best_palette(n_colors)
+            palette = get_best_palette(n_colors, impose_palette)
         attr2color = dict(zip(attributes, palette))
         df['color'] = df[color_by].map(attr2color)
 
@@ -668,7 +675,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                      color_compo=color_compo,
                      cut_diam=cut_diam,
                      connect_backbone=connect_backbone,
-                     plot_cca=plot_cca)
+                     plot_cca=plot_cca,
+                     impose_palette=impose_palette)
 
     if girvan_newman:
         if (w1 is None and w2 is None) or standard_diff:
@@ -811,13 +819,20 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         cmap = nx.to_numpy_array(net, weight=weight)
         np.save(cmap_out, cmap)
 
-    if 'ncompo' in to_print:
+    if 'ncompos' in to_print:
         net = nx.from_pandas_edgelist(df,
                                       source="node1",
                                       target="node2",
                                       edge_attr=True)
         print('Number of components {}'.
               format(nx.number_connected_components(net)))
+    if 'nedges' in to_print:
+        print('Number of edges {}'.
+              format(len(net.edges())))
+
+    if 'nnodes' in to_print:
+        print('Number of nodes {}'.
+              format(len(net.nodes())))
 
     if reset_view:
         cmd.set_view(view)
