@@ -199,27 +199,25 @@ class MDFeaturizer():
             with mp.Manager() as manager:
                 shared_data = manager.list()
                 processes = []
-                kw = kwargs.get()
                 for _t, ts in enumerate(
                         tqdm(self.universe.trajectory[self.slice])):
                     if selection2 is None:
                         p = mp.Process(target=self._contacts_sym_parallel,
                                        args=(shared_data,
                                              self.s1.positions,
-                                             _t,),
-                                       kwargs=(kw,))
+                                             _t,))
                     else:
                         p = mp.Process(target=self._contacts_asym_parallel,
                                        args=(shared_data,
                                              self.s1.positions,
                                              self.s2.positions,
-                                             _t,),
-                                       kwargs=(kw,))
+                                             _t,))
                     p.start()
                     processes.append(p)
 
                 for p in processes:
                     p.join()
+                    p.close()
                 res1 = [t[0] for t in shared_data]
                 res2 = [t[1] for t in shared_data]
                 data = [t[2] for t in shared_data]
