@@ -120,8 +120,7 @@ def create_topmat(sele, top, map_indexes, map_residues):
 
 
 def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
-            smaller_max=False, color_compo=False, connect_backbone=False,
-            plot_cca=None, impose_palette=None):
+            smaller_max=False, connect_backbone=False, plot_cca=None):
     """Internal function that performs connected component analysis on a
     given network.
     Parameters
@@ -232,12 +231,6 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     vps = [np.max(np.abs(list(nx.get_edge_attributes(c, weight).values())))
            for c in components_list]
     r = np.argsort(vps)[::-1]
-    if color_compo:
-        node2compo = {}
-        for i, color in zip(r, get_best_palette(len(r), impose_palette=impose_palette)):
-            for a in components_list[i]:
-                node2compo[a] = color
-        df['color'] = df['node1'].map(node2compo)
 
     return df
 
@@ -403,6 +396,19 @@ def get_best_palette(n_colors, impose_palette=None):
 
     return palette
 
+def _color_by(df, color_by, color_by_list, impose_palette):
+    attributes = pd.unique(df[color_by])
+    n_colors = len(attributes)
+    if color_by_list:
+        palette = color_by_list
+        print(''.join('{} colored in {}; '.format(u, v)
+                for u, v in zip(attributes, palette)))
+    else:
+        palette = get_best_palette(n_colors, impose_palette)
+    attr2color = dict(zip(attributes, palette))
+    df['color'] = df[color_by].map(attr2color)
+    return df
+
 
 
 def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
@@ -503,7 +509,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
-         cut_diam=3, connect_backbone=False, plot_cca=None, impose_palette=None):
+         cut_diam=3, connect_backbone=False, plot_cca=None, 
+         impose_palette=None, fix_near_misses=False):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -623,16 +630,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
 
     # Color by attribute
     if color_by is not None:
-        attributes = pd.unique(df[color_by])
-        n_colors = len(attributes)
-        if color_by_list:
-            palette = color_by_list
-            print(''.join('{} colored in {}; '.format(u, v)
-                  for u, v in zip(attributes, palette)))
-        else:
-            palette = get_best_palette(n_colors, impose_palette)
-        attr2color = dict(zip(attributes, palette))
-        df['color'] = df[color_by].map(attr2color)
+        df = _color_by(df, color_by, color_by_list, impose_palette)
 
     # Color by sign of weight
     elif color_sign:
@@ -667,16 +665,12 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                     head(n=topk).index]  # here?
     if cca:
         group_compo = True
-        if not color_sign and not color_compo:
-            color_compo = True
         df = get_cca(df,
                      weight,
                      smaller_max=smaller_max,
-                     color_compo=color_compo,
                      cut_diam=cut_diam,
                      connect_backbone=connect_backbone,
-                     plot_cca=plot_cca,
-                     impose_palette=impose_palette)
+                     plot_cca=plot_cca)
 
     if girvan_newman:
         if (w1 is None and w2 is None) or standard_diff:
@@ -762,13 +756,30 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             net = net.copy()
             net.add_edges_from(edges_to_add)
 
+        if 1 <= fix_near_misses <= 3:
+            nbunch = np.sort(list(net.nodes()))
+            ebunch = list(net.edges())
+            n = fix_near_misses
+            # This is the most tricky part, we add very thin edges between
+            # covalently bound groups of the protein
+            # In a traditional AAN this condition is abs(u-v) == 1 but in
+            # CGN we have to divide by the number of groups per residue
+            # and include the zero case (same residue)
+            edges_to_add = [(u, v, {weight: 1e-10})
+                            for u, v in zip(nbunch[:-1], nbunch[1:])
+                            if abs(u//n-v//n) <= 1 and (u, v) not in ebunch]
+            net = net.copy()
+            net.add_edges_from(edges_to_add)
+
+
         compo = {
             i: list(c) for i,
             c in enumerate(
                 sorted(
-                    nx. connected_components(net),
+                    nx.connected_components(net),
                     key=len,
                     reverse=True))}
+
 
         components = np.zeros(len(df))
 
@@ -779,12 +790,17 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         df['component'] = ['C{}'.format(int(i)) for i in components]
         group_by = 'component'
 
+
+        if color_compo:
+            df = _color_by(df, 'component', color_by_list, impose_palette)
+
+
     # Draws groups or all or in function of sign of weight
     if group_by is not None:
-        groups = pd.unique(df[group_by])
-        for group in groups:
-            _draw_df(df.loc[df[group_by] == group],
-                     label=group,
+        grouped = df.groupby(by=group_by)
+        for key, loc in grouped.groups.items():
+            _draw_df(df.loc[loc],
+                     label=key,
                      samewidth=samewidth)
     else:
         if color_sign:
