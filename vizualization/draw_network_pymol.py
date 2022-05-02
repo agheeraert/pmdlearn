@@ -1,3 +1,4 @@
+from sqlite3 import connect
 import seaborn as sns
 import pickle as pkl
 from networkx.algorithms.community import girvan_newman, modularity
@@ -118,9 +119,62 @@ def create_topmat(sele, top, map_indexes, map_residues):
         topmat[map_indexes[id], map_residues[id]] = 1
     return topmat
 
+def connect_edges(nbunch, ebunch, connect_nodes):
+    edges_to_add = []
+    # Add neighbors in AANs
+    if connect_nodes == 1:
+        for u in nbunch:
+            for v in nbunch:
+                if abs(u-v) == 1 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add within residue in 2GN
+    if connect_nodes in [2, 4]:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//2-v//2) == 0 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add within residue in 3GN
+    if connect_nodes in [3, 5]:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//3-v//3) == 0 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add backbone-backbone in 2GN
+    if connect_nodes == 4:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//2-v//2) == 1 and u%2*v%2 == 0 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add backbone-backbone in 3GN
+    if connect_nodes == 5:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//3-v//3) == 1 and u%3*v%3 == 0 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add all within in 2GN
+    if connect_nodes == 6:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//2-v//2) <= 1 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    # Add all within in 3GN
+    if connect_nodes == 7:
+        for i, u in enumerate(nbunch):
+            for v in nbunch[i+1:]:
+                if abs(u//3-v//3) <= 1 and (u, v) not in ebunch:
+                    edges_to_add.append((u, v, 1e-10))
+
+    return edges_to_add
+
 
 def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
-            smaller_max=False, connect_backbone=False, plot_cca=None):
+            smaller_max=False, connect_nodes=None, plot_cca=None):
     """Internal function that performs connected component analysis on a
     given network.
     Parameters
@@ -149,8 +203,8 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     color_compo: bool, default=False
     Toggles coloring by connected components
 
-    connect_backbone: bool, default=False
-    Toggles backbone connection during Connected Component Analysis
+    connect_nodes: bool, default=None
+    Toggles some node connection during Connected Component Analysis
 
     plot_cca: str or None, default=None
     If different than None, is the output path for plotting the number of
@@ -166,32 +220,59 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     ---------
     to be published
     """
+
+    old_colors = []
+    for i, c_str in enumerate(['color', 'color2']):
+        if c_str in df.columns:
+            old_colors.append(dict(zip(df['node{}'.format(i+1)], df[c_str])))
+        else:
+            old_colors.append({})
+            
     net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
     net.remove_nodes_from(list(nx.isolates(net)))
     edge_list = sorted(net.edges(data=True),
                        key=lambda t: abs(t[2].get(weight, 1)), reverse=True)
-    elist = deepcopy(edge_list)
     connected_components = [[nx.number_connected_components(net), 0]]
-
-    while len(net.nodes()) != 0:
+    # prev_cc = np.array([connected_components[0][0]])
+    while len(edge_list) != 0:
         u, v, dic = edge_list.pop()
         net.remove_edge(u, v)
         net.remove_nodes_from(list(nx.isolates(net)))
-        if connect_backbone:
-            nbunch = np.sort(list(net.nodes()))
-            ebunch = list(net.edges())
-            edges_to_add = [(u, v, {weight: 1e-10})
-                            for u, v in zip(nbunch[:-1], nbunch[1:])
-                            if abs(u-v) == 1 and (u, v) not in ebunch]
+        cc = [nx.number_connected_components(net), abs(dic.get(weight, 1))]
+        if connect_nodes is not None:
+            # Add neighbors in AANs
+            if connect_nodes == 1:
+                if abs(u-v) == 1:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+            # Add within residue in 2GN
+            if connect_nodes in [2, 4]:
+                if abs(u//2-v//2) == 0:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+            # Add within residue in 3GN
+            if connect_nodes in [3, 5]:
+                if abs(u//3-v//3) == 0:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+            # Add backbone-backbone in 2GN
+            if connect_nodes == 4:
+                if u%2*v%2 == 0 and abs(u//2-v//2) == 1:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+            # Add all neighboring in 2GN
+            # if connect_nodes == 6:
+            #     if abs(u//2-v//2) <= 1:
+            #         net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+            # Add backbone-backbone in 3GN
+            if connect_nodes == 5:
+                if u%3 == 0 and abs(u//3-v//3) == 1:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
 
-            _net = net.copy()
-            _net.add_edges_from(edges_to_add)
-            connected_components.append([nx.number_connected_components(_net),
-                                         abs(dic.get(weight, 1))])
-        else:
-            connected_components.append([nx.number_connected_components(net),
-                                         abs(dic.get(weight, 1))])
+            # Add all neighboring in 3GN
+            if connect_nodes == 7:
+                if abs(u//3-v//3) <= 1:
+                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
+
+            cc = [nx.number_connected_components(net), abs(dic.get(weight, 1))]
+        connected_components.append(cc)
     connected_components = np.array(connected_components)
 
     if plot_cca is not None:
@@ -206,17 +287,17 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
         threshold = connected_components[np.where(point)[0][-1]][1]
     else:
         threshold = connected_components[-m, 1]
+    print(threshold)
+
     df = df.loc[df[weight].abs() > threshold]
     net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
-    if connect_backbone:
-        nbunch = np.sort(list(net.nodes()))
+    if connect_nodes is not None:
+        nbunch = list(net.nodes())
         ebunch = list(net.edges())
-        edges_to_add = [(u, v, {weight: 1e-10})
-                        for u, v in zip(nbunch[:-1], nbunch[1:])
-                        if abs(u-v) == 1 and (u, v) not in ebunch]
-
-        net.add_edges_from(edges_to_add)
+        edges_to_add = connect_edges(nbunch, ebunch, connect_nodes)
+    
+        net.add_weighted_edges_from(edges_to_add, weight=weight)
 
     components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
@@ -228,10 +309,9 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
     df = nx.to_pandas_edgelist(net, source='node1', target='node2')
-    vps = [np.max(np.abs(list(nx.get_edge_attributes(c, weight).values())))
-           for c in components_list]
-    r = np.argsort(vps)[::-1]
-
+    for elt, c_str, i in zip(old_colors, ['color', 'color2'], [1, 2]):
+        if len(elt) != 0:
+            df[c_str] = df['node{}'.format(i)].map(elt)
     return df
 
 
@@ -407,6 +487,7 @@ def _color_by(df, color_by, color_by_list, impose_palette):
         palette = get_best_palette(n_colors, impose_palette)
     attr2color = dict(zip(attributes, palette))
     df['color'] = df[color_by].map(attr2color)
+    df['color2'] = df[color_by].map(attr2color)
     return df
 
 
@@ -509,7 +590,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
-         cut_diam=3, connect_backbone=False, plot_cca=None, 
+         cut_diam=3, connect_nodes=None, plot_cca=None, 
          impose_palette=None, fix_near_misses=False):
     """
     draws network on a selection from a pandas DataFrame
@@ -646,6 +727,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
 
         def weight2color(X): return color1 if X >= 0 else color2
         df['color'] = df[weight].map(weight2color)
+        df['color2'] = df[weight].map(weight2color)
+
     else:
         if 'color' not in df.columns:
             df['color'] = [base_color] * len(df['node1'])
@@ -669,7 +752,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                      weight,
                      smaller_max=smaller_max,
                      cut_diam=cut_diam,
-                     connect_backbone=connect_backbone,
+                     connect_nodes=connect_nodes,
                      plot_cca=plot_cca)
 
     if girvan_newman:
@@ -747,14 +830,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                                       source="node1",
                                       target="node2",
                                       edge_attr=True)
-        if connect_backbone:
-            nbunch = np.sort(list(net.nodes()))
-            ebunch = list(net.edges())
-            edges_to_add = [(u, v, {weight: 1e-10})
-                            for u, v in zip(nbunch[:-1], nbunch[1:])
-                            if abs(u-v) == 1 and (u, v) not in ebunch]
-            net = net.copy()
-            net.add_edges_from(edges_to_add)
 
         if 1 <= fix_near_misses <= 3:
             nbunch = np.sort(list(net.nodes()))
@@ -765,11 +840,17 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             # In a traditional AAN this condition is abs(u-v) == 1 but in
             # CGN we have to divide by the number of groups per residue
             # and include the zero case (same residue)
-            edges_to_add = [(u, v, {weight: 1e-10})
+            edges_to_add = [(u, v, 1e-10)
                             for u, v in zip(nbunch[:-1], nbunch[1:])
                             if abs(u//n-v//n) <= 1 and (u, v) not in ebunch]
-            net = net.copy()
-            net.add_edges_from(edges_to_add)
+            net.add_weighted_edges_from(edges_to_add, weight=weight)
+        
+        if connect_nodes is not None:
+            nbunch = list(net.nodes())
+            ebunch = list(net.edges())
+            edges_to_add = connect_edges(nbunch, ebunch, connect_nodes)
+        
+            net.add_weighted_edges_from(edges_to_add, weight=weight)
 
 
         compo = {
@@ -834,20 +915,20 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                                       edge_attr=True)
         cmap = nx.to_numpy_array(net, weight=weight)
         np.save(cmap_out, cmap)
+    net = nx.from_pandas_edgelist(df,
+                                  source="node1",
+                                  target="node2",
+                                  edge_attr=True)
 
     if 'ncompos' in to_print:
-        net = nx.from_pandas_edgelist(df,
-                                      source="node1",
-                                      target="node2",
-                                      edge_attr=True)
-        print('Number of components {}'.
+        print('{} components'.
               format(nx.number_connected_components(net)))
     if 'nedges' in to_print:
-        print('Number of edges {}'.
+        print('{} edges'.
               format(len(net.edges())))
 
     if 'nnodes' in to_print:
-        print('Number of nodes {}'.
+        print('{} nodes'.
               format(len(net.nodes())))
 
     if reset_view:
