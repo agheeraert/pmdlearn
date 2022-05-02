@@ -119,6 +119,7 @@ def create_topmat(sele, top, map_indexes, map_residues):
         topmat[map_indexes[id], map_residues[id]] = 1
     return topmat
 
+
 def connect_edges(nbunch, ebunch, connect_nodes):
     edges_to_add = []
     # Add neighbors in AANs
@@ -146,14 +147,16 @@ def connect_edges(nbunch, ebunch, connect_nodes):
     if connect_nodes == 4:
         for i, u in enumerate(nbunch):
             for v in nbunch[i+1:]:
-                if abs(u//2-v//2) == 1 and u%2*v%2 == 0 and (u, v) not in ebunch:
+                if (abs(u//2-v//2) == 1 and u % 2*v % 2 == 0
+                        and (u, v) not in ebunch):
                     edges_to_add.append((u, v, 1e-10))
 
     # Add backbone-backbone in 3GN
     if connect_nodes == 5:
         for i, u in enumerate(nbunch):
             for v in nbunch[i+1:]:
-                if abs(u//3-v//3) == 1 and u%3*v%3 == 0 and (u, v) not in ebunch:
+                if (abs(u//3-v//3) == 1 and u % 3*v % 3 == 0
+                        and (u, v) not in ebunch):
                     edges_to_add.append((u, v, 1e-10))
 
     # Add all within in 2GN
@@ -227,7 +230,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
             old_colors.append(dict(zip(df['node{}'.format(i+1)], df[c_str])))
         else:
             old_colors.append({})
-            
+
     net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
     net.remove_nodes_from(list(nx.isolates(net)))
@@ -252,23 +255,6 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
             # Add within residue in 3GN
             if connect_nodes in [3, 5]:
                 if abs(u//3-v//3) == 0:
-                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
-            # Add backbone-backbone in 2GN
-            if connect_nodes == 4:
-                if u%2*v%2 == 0 and abs(u//2-v//2) == 1:
-                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
-            # Add all neighboring in 2GN
-            # if connect_nodes == 6:
-            #     if abs(u//2-v//2) <= 1:
-            #         net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
-            # Add backbone-backbone in 3GN
-            if connect_nodes == 5:
-                if u%3 == 0 and abs(u//3-v//3) == 1:
-                    net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
-
-            # Add all neighboring in 3GN
-            if connect_nodes == 7:
-                if abs(u//3-v//3) <= 1:
                     net.add_weighted_edges_from([(u, v, 1e-10)], weight=weight)
 
             cc = [nx.number_connected_components(net), abs(dic.get(weight, 1))]
@@ -296,7 +282,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
         nbunch = list(net.nodes())
         ebunch = list(net.edges())
         edges_to_add = connect_edges(nbunch, ebunch, connect_nodes)
-    
+
         net.add_weighted_edges_from(edges_to_add, weight=weight)
 
     components_list = [net.subgraph(c).copy()
@@ -476,20 +462,20 @@ def get_best_palette(n_colors, impose_palette=None):
 
     return palette
 
+
 def _color_by(df, color_by, color_by_list, impose_palette):
     attributes = pd.unique(df[color_by])
     n_colors = len(attributes)
     if color_by_list:
         palette = color_by_list
         print(''.join('{} colored in {}; '.format(u, v)
-                for u, v in zip(attributes, palette)))
+                      for u, v in zip(attributes, palette)))
     else:
         palette = get_best_palette(n_colors, impose_palette)
     attr2color = dict(zip(attributes, palette))
     df['color'] = df[color_by].map(attr2color)
     df['color2'] = df[color_by].map(attr2color)
     return df
-
 
 
 def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
@@ -590,7 +576,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          reset_view=True, samewidth=False, induced=None, group_compo=False,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
-         cut_diam=3, connect_nodes=None, plot_cca=None, 
+         cut_diam=3, connect_nodes=None, plot_cca=None,
          impose_palette=None, fix_near_misses=False):
     """
     draws network on a selection from a pandas DataFrame
@@ -844,14 +830,13 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                             for u, v in zip(nbunch[:-1], nbunch[1:])
                             if abs(u//n-v//n) <= 1 and (u, v) not in ebunch]
             net.add_weighted_edges_from(edges_to_add, weight=weight)
-        
+
         if connect_nodes is not None:
             nbunch = list(net.nodes())
             ebunch = list(net.edges())
             edges_to_add = connect_edges(nbunch, ebunch, connect_nodes)
-        
-            net.add_weighted_edges_from(edges_to_add, weight=weight)
 
+            net.add_weighted_edges_from(edges_to_add, weight=weight)
 
         compo = {
             i: list(c) for i,
@@ -860,7 +845,6 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                     nx.connected_components(net),
                     key=len,
                     reverse=True))}
-
 
         components = np.zeros(len(df))
 
@@ -871,10 +855,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         df['component'] = ['C{}'.format(int(i)) for i in components]
         group_by = 'component'
 
-
         if color_compo:
             df = _color_by(df, 'component', color_by_list, impose_palette)
-
 
     # Draws groups or all or in function of sign of weight
     if group_by is not None:

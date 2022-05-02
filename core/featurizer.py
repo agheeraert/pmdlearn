@@ -337,7 +337,7 @@ class MDFeaturizer():
             self.ix1[pairs], axis=1).T, t)
 
     def _contacts_asym_parallel(self, shared_data, pos1, pos2, t, **kwargs):
-        pairs = capped_distance(pos1, pos2, self.cutoff, 
+        pairs = capped_distance(pos1, pos2, self.cutoff,
                                 return_distances=False, **kwargs)
         pairs = np.stack([self.ix1[pairs[:, 0]], self.ix2[pairs[:, 1]]])
         # Removing duplicates
