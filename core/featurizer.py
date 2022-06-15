@@ -112,7 +112,7 @@ class MDFeaturizer():
 
     def contacts(self, selection="not name H*", selection2=None, cutoff=5.,
                  prevalence=None, expected=False, entangled=False,
-                 parallel=False, **kwargs):
+                 parallel=False, reindex_sel=False, **kwargs):
         """Featurize contacts
 
         Parameters:
@@ -143,6 +143,13 @@ class MDFeaturizer():
         If 0 or 1, runs a sequential script. If int > 1, runs a parallel
         script
 
+        reindex_sel: bool, default=False
+        If True, reindexes contact indices according to the selection so that
+        skipped residues are skipped in the total count. This is particularly
+        useful when computing contact matrices between different systems with
+        insertions and deletions.
+        This is experimental, we advise against using it combined with 
+        the entangled argument
         """
 
         self.cutoff = cutoff
@@ -151,6 +158,7 @@ class MDFeaturizer():
             selection += '_{}'.format(selection2)
 
         # Create dictionnary with atom to residue correspondance
+            
         if not entangled:
             self.atom2res = {atom.index: atom.residue.resindex
                              for atom in self.universe.atoms}
@@ -161,6 +169,15 @@ class MDFeaturizer():
             self.atom2res.update({atom.index: 2 * atom.residue.resindex + 1
                                   for atom in
                                   self.universe.select_atoms('not backbone')})
+        if reindex_sel:
+            self.atom2res = {atom.index: atom.residue.resindex
+                             for atom 
+                             in self.universe.select_atoms(selection).atoms}
+            list_resids = list(self.atom2res.values())
+            reindex = dict(zip(pd.unique(list_resids), 
+                               range(len(list_resids))))
+            for key, value in self.atom2res.items():
+                self.atom2res[key] = reindex[value]
 
         # Gets first selection and its indexing in the protein
         self.s1 = self.universe.select_atoms(selection)
