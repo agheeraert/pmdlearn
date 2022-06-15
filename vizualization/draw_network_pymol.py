@@ -711,9 +711,11 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         print('Positive values in {} and negative values in {}'.
               format(color1, color2))
 
-        def weight2color(X): return color1 if X >= 0 else color2
+        def weight2color(X): 
+            return color1 if X >= 0 else color2
+
         df['color'] = df[weight].map(weight2color)
-        df['color2'] = df[weight].map(weight2color)
+        df['color2'] = df['color']
 
     else:
         if 'color' not in df.columns:
@@ -799,17 +801,28 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     df = df.loc[df[weight].notna()]
 
     if induced is not None:
-        if isinstance(induced, str):
+        if isinstance(induced, (str, int)):
             induced = [induced]
+
         G = nx.from_pandas_edgelist(df,
                                     target='node1',
                                     source='node2',
                                     edge_attr=True)
+        subgraph_list = []
+        for node in induced:
+            if node in G.nodes():
+                sg = G.subgraph(nx.node_connected_component(G, node))
+                subgraph_list.append(sg)
+            else:
+                print("{} not in graph nodelist\n", list(G.nodes()))
+        if len(subgraph_list) > 0:
+            print(subgraph_list)
+            G = nx.compose_all(subgraph_list)
+            df = nx.to_pandas_edgelist(G, target='node1', source='node2')
+            print(', '.join(list(map(str, G.nodes()))))
 
-        G = nx.compose_all([G.subgraph(nx.node_connected_component(G, node))
-                            for node in induced if node in G.nodes()])
-        df = nx.to_pandas_edgelist(G, target='node1', source='node2')
-        print(', '.join(list(G.nodes())))
+        else:
+            print('Graph empty')
 
     if group_compo:
         net = nx.from_pandas_edgelist(df,
