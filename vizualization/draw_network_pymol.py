@@ -1,6 +1,7 @@
-from sqlite3 import connect
+from curses import ncurses_version
 import seaborn as sns
 import pickle as pkl
+from sklearn.cluster import Birch
 from networkx.algorithms.community import girvan_newman, modularity
 import networkx as nx
 from scipy.sparse import load_npz, csr_matrix
@@ -343,7 +344,7 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
     Girvan-Newman algorithm:
 
     Girvan, Michelle, and Mark EJ Newman.
-    "Community structure in social and biological networks."
+    "Community structure in social and logical networks."
     Proc. Natl. Acad. Sci. 99.12 (2002): 7821-7826.
 
     Modularity:
@@ -446,8 +447,9 @@ def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
 def get_best_palette(n_colors, impose_palette=None):
     if impose_palette:
         if n_colors > len(impose_palette):
-            warnings.warn('Not enough colors in custom palette. Using default\
-                           palettes')
+            warnings.warn('Not enough colors in custom palette. Do at your\
+                           own risk.')
+            return sns.color_palette(impose_palette, n_colors=n_colors)
         else:
             return impose_palette[:n_colors]
     if n_colors < 8:
@@ -567,6 +569,53 @@ def draw_from_atommat(path, perturbation=None, sele=None, sele1=None,
     draw(df, selection=top, **kwargs)
 
 
+def cluster_birch(df, weight='weight', source='node1', target='node2',
+                  n_clusters=None, save_plot=False):
+    edgelist = np.array(df[weight].abs().values).reshape(-1, 1)
+    brc = Birch(n_clusters=n_clusters)
+    labels = brc.fit_predict(edgelist)
+    max_lab = np.max(labels)
+    c = []
+    for i in range(max_lab+1):
+        c.append(np.sum(labels == i))
+    reorder = dict(enumerate(np.argsort(c)))
+    labels = np.array([reorder[i] for i in labels])
+    df['cluster'] = labels
+
+    edgelist = edgelist.reshape(-1)
+
+    if save_plot:
+        fig, ax = plt.subplots()
+        ordered_labels = labels[np.argsort(edgelist)]
+        _, idx = np.unique(ordered_labels, return_index=True)
+        i2color =  dict(zip(ordered_labels[np.sort(idx)], sns.color_palette("bright", len(np.unique(ordered_labels)))[::-1]))
+        ax.scatter(np.sort(edgelist), np.linspace(len(edgelist), 0, len(edgelist), endpoint=False), 
+            marker='+',
+            c=np.array([i2color[label] for label in ordered_labels]))
+
+        ax.set_xlabel('Weight')
+        ax.set_ylabel('Count')
+        axins = ax.inset_axes([0.3, 0.3, 0.6, 0.6])
+        x0, xt = ax.get_xlim()
+        y0, yt = ax.get_ylim()
+        x0, xt = plt.gca().get_xlim()
+        y0, yt = plt.gca().get_ylim()
+        perc= 100
+        w_t = np.sort(edgelist)[-perc]
+
+        axins.scatter(np.sort(edgelist), np.linspace(len(edgelist), 0, len(edgelist), endpoint=False), 
+            marker='+',
+            c=np.array([i2color[label] for label in ordered_labels]))
+
+        ticks = np.sort(edgelist)[np.where(np.diff(ordered_labels))]
+        axins.set_xticks(ticks)
+        axins.set_xticklabels([np.round(elt, 2) for elt in ticks], rotation=45)
+        axins.set_xlim(4.5, xt)
+        axins.set_ylim(0, perc)
+        plt.savefig(save_plot, transparent=True)
+    df['color'] = df['cluster'].map(i2color)
+    return df
+
 def draw(df, selection='polymer', group_by=None, color_by=None,
          color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75),
          r=1, edge_norm=None, weight='weight', w1=None, w2=None,
@@ -577,7 +626,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          color_compo=False, girvan_newman=False, dist_func=minus_log,
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
          cut_diam=3, connect_nodes=None, plot_cca=None,
-         impose_palette=None, fix_near_misses=False):
+         impose_palette=None, fix_near_misses=False, group_of_relevance=None,
+         save_plot_birch=False):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -695,6 +745,14 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             df = df.loc[~loc]
     node2CA = dict(zip(nodes, stored.posCA))
 
+    if group_of_relevance is not None:
+        if group_of_relevance > 1:
+            n_clusters = group_of_relevance
+        else:
+            n_clusters = None
+        df = cluster_birch(df, weight, save_plot=save_plot_birch, n_clusters=group_of_relevance)
+        group_by = 'cluster'
+
     # Color by attribute
     if color_by is not None:
         df = _color_by(df, color_by, color_by_list, impose_palette)
@@ -742,6 +800,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                      cut_diam=cut_diam,
                      connect_nodes=connect_nodes,
                      plot_cca=plot_cca)
+    
 
     if girvan_newman:
         if (w1 is None and w2 is None) or standard_diff:
