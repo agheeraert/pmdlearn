@@ -1,4 +1,5 @@
 from curses import ncurses_version
+from dis import dis
 import seaborn as sns
 import pickle as pkl
 from sklearn.cluster import Birch
@@ -14,14 +15,16 @@ from scipy.sparse.dok import dok_matrix
 import matplotlib as mpl
 import pickle5 as pkl5
 import matplotlib.pyplot as plt
+import gudhi as gd
 from copy import deepcopy
 mpl.use('Qt5Agg')
 
 
 def minus_log(mat):
     """Function performing a -np.log to compute distances from input matrix.
-    Rescales the matrix if positive but not in the [0-1[ interval.
-    Raise error for negative values.
+    Sanitizes the input but raises warnings. If the input matrix has negative
+    values it takes the absolute value and the if there are some values 
+    in [1; +inf[ it rescales in the [0-1[ range.
 
     Parameters
     ----------
@@ -37,7 +40,7 @@ def minus_log(mat):
         mat.fillna(0, inplace=True)
         mat = mat.values
 
-    if (0 <= mat).all() and (mat <= 1).all():
+    if (0 <= mat).all() and (mat < 1).all():
         return -np.log(mat)
     else:
         warnings.warn("Values not in [0-1[ range, Rescaling to this range")
@@ -46,13 +49,16 @@ def minus_log(mat):
             # This is not a problem to compute log but we don't want a
             # 0 distance
             mat = mat / (np.max(mat) + 1e-5)
-            return -np.log(mat)
         else:
             warnings.warn("Array has negative values, forcing positivity")
             mat = np.abs(mat)
             mat = mat / (np.max(mat) + 1e-5)
-            return -np.log(mat)
+        return -np.log(mat)
 
+def inverse(mat, fill_value=None):
+    return 1/np.abs(mat)
+
+str_to_func = {'minus_log': minus_log, 'inverse': inverse}
 
 def load_df(df):
     try:
@@ -225,12 +231,12 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     to be published
     """
 
-    old_colors = []
-    for i, c_str in enumerate(['color', 'color2']):
-        if c_str in df.columns:
-            old_colors.append(dict(zip(df['node{}'.format(i+1)], df[c_str])))
-        else:
-            old_colors.append({})
+    # old_colors = []
+    # for i, c_str in enumerate(['color', 'color2']):
+    #     if c_str in df.columns:
+    #         old_colors.append(dict(zip(df['node{}'.format(i+1)], df[c_str])))
+    #     else:
+    #         old_colors.append({})
 
     net = nx.from_pandas_edgelist(df.dropna(), source=source, target=target,
                                   edge_attr=True)
@@ -296,14 +302,14 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     components_list = [net.subgraph(c).copy()
                        for c in nx.connected_components(net)]
     df = nx.to_pandas_edgelist(net, source='node1', target='node2')
-    for elt, c_str, i in zip(old_colors, ['color', 'color2'], [1, 2]):
-        if len(elt) != 0:
-            df[c_str] = df['node{}'.format(i)].map(elt)
+    # for elt, c_str, i in zip(old_colors, ['color', 'color2'], [1, 2]):
+    #     if len(elt) != 0:
+    #         df[c_str] = df['node{}'.format(i)].map(elt)
     return df
 
 
 def get_girvan_newman(df, weight='weight', source='node1', target='node2',
-                      color_compo=True, dist_func=minus_log,
+                      color_compo=True, dist_func='minus_log',
                       plot_betweenness=False, impose_palette=None):
     """Internal function that performs community analysis using a girvan
     newman community decomposition optimizing the modularity measure.
@@ -325,7 +331,7 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
     color_compo: bool, default=False
     Toggles coloring by connected components
 
-    dist_func: function or None, default=minus_log
+    dist_func: str or None, default='minus_log'
     if None, consider that the input network already represents distances
     else computes the distances using a predefined function
 
@@ -363,7 +369,7 @@ def get_girvan_newman(df, weight='weight', source='node1', target='node2',
         old_weights = {(u, v): w for u, v, w in zip(df[source],
                                                     df[target],
                                                     df[weight])}
-
+        dist_func = str_to_func[dist_func]
         df['_{}'.format(weight)] = dist_func(df[weight].values)
         net = nx.from_pandas_edgelist(df.dropna(),
                                       source=source,
@@ -475,8 +481,8 @@ def _color_by(df, color_by, color_by_list, impose_palette):
     else:
         palette = get_best_palette(n_colors, impose_palette)
     attr2color = dict(zip(attributes, palette))
-    df['color'] = df[color_by].map(attr2color)
-    df['color2'] = df[color_by].map(attr2color)
+    df.loc[:, 'color'] = df[color_by].map(attr2color)
+    df.loc[:, 'color2'] = df[color_by].map(attr2color)
     return df
 
 
@@ -616,6 +622,35 @@ def cluster_birch(df, weight='weight', source='node1', target='node2',
     df['color'] = df['cluster'].map(i2color)
     return df
 
+def get_persistent_homology(df, weight, alpha, dist_func='minus_log'):
+    # print(df.loc[(df['node1'] == 3) & (df['node2'] == 4)])
+    net = nx.from_pandas_edgelist(df.dropna(), source='node1', target='node2',
+                                  edge_attr=True)
+    adjmat = nx.to_numpy_array(net, weight=weight)
+
+    if dist_func is not None:
+        dist_func = str_to_func[dist_func]
+        dmat = dist_func(adjmat)
+    else:
+        dmat = adjmat
+    
+    maxi = np.max(dmat[~np.isinf(dmat)])
+
+    distances = [[]]
+    for i, row in enumerate(dmat):
+        if i > 1:
+            distances.append(row[:i-1].tolist())
+    rips = gd.RipsComplex(distance_matrix=distances, max_edge_length=maxi+1)
+    st = rips.create_simplex_tree(max_dimension=0)
+    edges_to_keep = [(vertices[0], vertices[1]) for vertices, dist
+                      in st.get_filtration()
+                      if len(vertices) == 2 and dist <= alpha]
+    net = net.edge_subgraph(edges_to_keep)
+    df = nx.to_pandas_edgelist(net, source='node1', target='node2')
+    # print(df.loc[(df['node1'] == 3) & (df['node2'] == 4)])
+    return df
+    
+
 def draw(df, selection='polymer', group_by=None, color_by=None,
          color_by_list=None, color_sign=False, base_color=(0.75, 0.75, 0.75),
          r=1, edge_norm=None, weight='weight', w1=None, w2=None,
@@ -623,11 +658,11 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
          labeling=None, keep_interfaces=False, save_df=False, cmap_out=None,
          topk=None, to_print=[], cca=False, smaller_max=False, center='n. CA',
          reset_view=True, samewidth=False, induced=None, group_compo=False,
-         color_compo=False, girvan_newman=False, dist_func=minus_log,
+         color_compo=False, girvan_newman=False, dist_func='minus_log',
          plot_betweenness=False, remove_intracomm=False, standard_diff=True,
          cut_diam=3, connect_nodes=None, plot_cca=None,
          impose_palette=None, fix_near_misses=False, group_of_relevance=None,
-         save_plot_birch=False):
+         save_plot_birch=False, persistent_homology=False):
     """
     draws network on a selection from a pandas DataFrame
     DataFrame should be structured this way:
@@ -750,7 +785,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             n_clusters = group_of_relevance
         else:
             n_clusters = None
-        df = cluster_birch(df, weight, save_plot=save_plot_birch, n_clusters=group_of_relevance)
+        df = cluster_birch(df, weight, save_plot=save_plot_birch, n_clusters=n_clusters)
         group_by = 'cluster'
 
     # Color by attribute
@@ -772,12 +807,13 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         def weight2color(X): 
             return color1 if X >= 0 else color2
 
-        df['color'] = df[weight].map(weight2color)
-        df['color2'] = df['color']
+        df.loc[:, 'color'] = df.loc[:, weight].map(weight2color)
+        df.loc[:, 'color2'] = df.loc[:, 'color']
 
     else:
         if 'color' not in df.columns:
             df['color'] = [base_color] * len(df['node1'])
+
 
     # Apply threshold/topk/cca on weight
     if isinstance(threshold, (int, float, complex)):
@@ -794,12 +830,21 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
                     head(n=topk).index]  # here?
     if cca:
         group_compo = True
+        if not color_sign:
+            color_compo=True
         df = get_cca(df,
                      weight,
                      smaller_max=smaller_max,
                      cut_diam=cut_diam,
                      connect_nodes=connect_nodes,
                      plot_cca=plot_cca)
+    
+
+    if persistent_homology:
+        df = get_persistent_homology(df,
+                                     weight,
+                                     alpha=persistent_homology,
+                                     dist_func=dist_func)
     
 
     if girvan_newman:
@@ -883,6 +928,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         else:
             print('Graph empty')
 
+
     if group_compo:
         net = nx.from_pandas_edgelist(df,
                                       source="node1",
@@ -929,6 +975,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
 
         if color_compo:
             df = _color_by(df, 'component', color_by_list, impose_palette)
+    
 
     # Draws groups or all or in function of sign of weight
     if group_by is not None:
