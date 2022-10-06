@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmdlearn"
+version = "0.0.1"
+authors = [
+  { name="Aria.Gheeraert", email="aria.gheeraert@gmail.com" },
+]
+description = "Protein Molecular Dynamics LEARNing"
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = [
+  "mdanalysis>=2",
+  "mdanalysistests>=2",
+  "numpy>=1.21",
+  "tqdm>=4.63.0",
+  "scipy>=1.5.3",
+  "pandas>=1.3.5",
+  "scikit-learn>=1.0.2",
+  "seaborn>=0.11.2",
+  "matplotlib>=3.5.0",
+  "pickle5>=0.0.11",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/agheeraert/pmdlearn"
+"Bug Tracker" = "https://github.com/agheeraert/pmdlearn/issues"
+
+

@@ -2,27 +2,17 @@
 Protein Molecular Dynamics LEARNing 
 
 ## Installation
-I strongly recommand using conda (in general) and for managing this project
-### Cloning the repository
-If using conda, go in your conda site-packages directory, for instance
+Using `pip`
 ```bash 
-cd ~/anaconda3/lib/python3.7/site-packages
-```
-Clone the repository:
-```bash
-git clone https://github.com/agheeraert/pmdlearn.git
+pip install git+https://github.com/agheeraert/pmdlearn
 ```
 ### Requirements
-The requirements are listed in the requirements.txt file. This file may be used to create an environment using:
+Pip manages all dependencies but a conda environment file is also available in this project root folder. You create a new conda environment with: 
 ``` bash
-conda create --name <env> --file requirements.txt
-```
-### Adding the module to your python path (if not using conda)
-```bash
-echo "export PYTHONPATH=$PYTHONPATH:$(pwd)/pmdlearn" >> ~/.bashrc
+conda create --name <env> --file env.yml 
 ```
 ### Getting started
-In python you can check that the module is correctly installed
+Load the module
 ```python
 import pmdlearn as pm
 ```
@@ -40,16 +30,16 @@ Extract contact features
 contacts_ref = mdf_reference.contacts()
 contacts_pert = mdf_perturbed.contacts()
 ```
-Adding (concatenating) features together
+Add (concatenating) features together
 ```python
 contacts = contacts_ref + contacts_pert
 ```
-Building a Dynamical Perturbation Contact Network DataFrame
+Build a Dynamical Perturbation Contact Network DataFrame and saving it for further use
 ```python
 dpcn = contacts.average()
 dpcn.to_pickle('dpcn.dfp')
 ```
-Building a Contact PCA
+Build a Contact PCA
 ```python
 cPCA = contacts.ca(n_components=2)
 influences = cPCA.get_influences()
@@ -85,5 +75,5 @@ pymol example.py
 ```
 
 ### Tutorial
-In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes
+In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes for IGPS in Gheeraert, Aria, et al. "Exploring allosteric pathways of a v-type enzyme with dynamical perturbation networks." ***J. Phys. Chem. B.*** 123.16 (2019): 3452-3461.
 
