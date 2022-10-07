@@ -75,5 +75,11 @@ pymol example.py
 ```
 
 ### Tutorial
-In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes for IGPS in Gheeraert, Aria, et al. "Exploring allosteric pathways of a v-type enzyme with dynamical perturbation networks." ***J. Phys. Chem. B.*** 123.16 (2019): 3452-3461.
+In the notebook folder, there is a step by step notebook to reproduce the DPCN and CPCN analyzes for IGPS in [1]
+### References
+DPCN analysis:  
+Gheeraert, Aria, Lorenza Pacini, Victor S. Batista, Laurent Vuillon, Claire Lesieur, and Ivan Rivalta. "Exploring allosteric pathways of a v-type enzyme with dynamical perturbation networks." ***J. Phys. Chem. B*** 123, no. 16 (2019): 3452-3461.  
+
+cPCA analysis:  
+[2] Gheeraert, Aria, Laurent Vuillon, Laurent Chaloin, Olivier Moncorgé, Thibaut Very, Serge Perez, Vincent Leroux et al. "Singular Interface Dynamics of the SARS-CoV-2 Delta Variant Explained with Contact Perturbation Analysis." ***J. Chem. Info. Model.***  (2022).  
 
