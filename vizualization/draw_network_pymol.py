@@ -787,6 +787,8 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             n_clusters = None
         df = cluster_birch(df, weight, save_plot=save_plot_birch, n_clusters=n_clusters)
         group_by = 'cluster'
+        df['n_in_cluster'] = df.groupby('cluster')['cluster'].transform(len)
+        print(df.sort_values('n_in_cluster').groupby('cluster', sort=False).size().cumsum())
 
     # Color by attribute
     if color_by is not None:
@@ -818,6 +820,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     # Apply threshold/topk/cca on weight
     if isinstance(threshold, (int, float, complex)):
         df = df.loc[df[weight].abs() >= threshold]  # thrown here?
+        print((df[weight].abs() >= threshold).sum())
     elif isinstance(threshold, str):
         if threshold in df.columns:
             df = df.loc[df[weight].abs() >= df[threshold]]  # here?
@@ -828,6 +831,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     if topk:
         df = df.loc[df[weight].abs().sort_values(ascending=False).
                     head(n=topk).index]  # here?
+        print(df[weight].abs().min())
     if cca:
         group_compo = True
         if not color_sign:
