@@ -305,6 +305,7 @@ def get_cca(df, weight='weight', source='node1', target='node2', cut_diam=3,
     # for elt, c_str, i in zip(old_colors, ['color', 'color2'], [1, 2]):
     #     if len(elt) != 0:
     #         df[c_str] = df['node{}'.format(i)].map(elt)
+    print(len(df))
     return df
 
 
