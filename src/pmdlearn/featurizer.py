@@ -153,9 +153,9 @@ class MDFeaturizer():
         """
 
         self.cutoff = cutoff
-        if selection2 is not None:  # Handling asymetric selection case
+        # if selection2 is not None:  # Handling asymetric selection case
             # self.features_name += '_asym'
-            selection += '_{}'.format(selection2)
+            # selection += '_{}'.format(selection2)
 
         # Create dictionnary with atom to residue correspondance
             
