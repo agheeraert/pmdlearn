@@ -99,7 +99,7 @@ class MDFeaturizer():
         selection: str
         Selection of atoms to featurize backbone dihedral angles"""
 
-        self.features_name = 'phi_psi'
+        # self.features_name = 'phi_psi'
         r = Ramachandran(self.universe.select_atoms(selection)).run()
         cos = np.cos(np.radians(r.results.angles))
         sin = np.sin(np.radians(r.results.angles))
@@ -154,7 +154,7 @@ class MDFeaturizer():
 
         self.cutoff = cutoff
         if selection2 is not None:  # Handling asymetric selection case
-            self.features_name += '_asym'
+            # self.features_name += '_asym'
             selection += '_{}'.format(selection2)
 
         # Create dictionnary with atom to residue correspondance
