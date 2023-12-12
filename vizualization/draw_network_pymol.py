@@ -11,7 +11,6 @@ from pymol.cgo import *
 import pandas as pd
 from scipy.sparse.dok import dok_matrix
 import matplotlib as mpl
-import pickle5 as pkl5
 import matplotlib.pyplot as plt
 import gudhi as gd
 from copy import deepcopy
@@ -77,6 +76,7 @@ def load_df(df):
     try:
         return pd.read_pickle(df)
     except ValueError:
+        import pickle5 as pkl5
         return pkl5.load(open(df, 'rb'))
 
 
