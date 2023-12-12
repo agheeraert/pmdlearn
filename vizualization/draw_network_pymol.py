@@ -1,5 +1,3 @@
-from curses import ncurses_version
-from dis import dis
 import seaborn as sns
 import pickle as pkl
 from sklearn.cluster import Birch
@@ -17,7 +15,22 @@ import pickle5 as pkl5
 import matplotlib.pyplot as plt
 import gudhi as gd
 from copy import deepcopy
+import matplotlib.colors as mcolors
 mpl.use('Qt5Agg')
+
+
+# Liste de couleurs personnalisée
+noBlueRed = [
+    (1.0, 0.48627450980392156, 0.0),
+    (0.10196078431372549, 0.788235294117647, 0.2196078431372549),
+    (0.5450980392156862, 0.16862745098039217, 0.8862745098039215),
+    (0.6235294117647059, 0.2823529411764706, 0.0),
+    (0.9450980392156862, 0.2980392156862745, 0.7568627450980392),
+    (0.6392156862745098, 0.6392156862745098, 0.6392156862745098),
+    (1.0, 0.7686274509803922, 0.0),
+    (0.0, 0.8431372549019608, 1.0)
+]
+
 
 
 def minus_log(mat):
@@ -453,6 +466,14 @@ def draw_from_df(path, reset_view=True, hide_nodes=True, **kwargs):
 
 def get_best_palette(n_colors, impose_palette=None):
     if impose_palette:
+        if impose_palette == "noBlueRed":
+            if n_colors <= 8:
+                return noBlueRed[:n_colors]
+            else:
+                print(noBlueRed*(n_colors // 8) + noBlueRed[:(n_colors % 8)+1], len(noBlueRed*(n_colors // 8) + noBlueRed[:(n_colors % 8)+1]))
+                return noBlueRed*(n_colors // 8) + noBlueRed[:(n_colors % 8)+1]
+        if isinstance(impose_palette[0], str):
+            return [mcolors.to_rgb(cname) for cname in impose_palette]
         if n_colors > len(impose_palette):
             warnings.warn('Not enough colors in custom palette. Do at your\
                            own risk.')
@@ -481,6 +502,7 @@ def _color_by(df, color_by, color_by_list, impose_palette):
                       for u, v in zip(attributes, palette)))
     else:
         palette = get_best_palette(n_colors, impose_palette)
+    print(palette)
     attr2color = dict(zip(attributes, palette))
     df.loc[:, 'color'] = df[color_by].map(attr2color)
     df.loc[:, 'color2'] = df[color_by].map(attr2color)
@@ -745,7 +767,25 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         cmd.label(selection=selection, expression="")
 
     # Get correspondance between 3D positions and labels
-    selection += " and {}".format(center)
+    if center == "first":
+        first_atoms = []
+        # Utiliser la fonction iterate pour parcourir tous les atomes
+        cmd.iterate(f"({selection})", "first_atoms.append((resi, index))", space=locals())
+
+        # Créer une liste des indices des premiers atomes
+        first_atoms_indices = []
+        previous_resi = None
+
+        for resi, index in first_atoms:
+            if resi != previous_resi:
+                first_atoms_indices.append(index)
+                previous_resi = resi
+
+        # Créer une sélection à partir des indices des premiers atomes
+        selection = "index " + "+".join([str(index) for index in first_atoms_indices])
+        raise TypeError(len(first_atoms_indices))
+    else:
+        selection += " and {}".format(center)
     stored.posCA, stored.resnames, stored.resids, stored.chains = [], [], [],\
                                                                   []
 
@@ -780,6 +820,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
             loc = (df['node1'].isin(notin)) | (df['node2'].isin(notin))
             df = df.loc[~loc]
     node2CA = dict(zip(nodes, stored.posCA))
+    # print(node2CA)
 
     if group_of_relevance is not None:
         if group_of_relevance > 1:
@@ -789,7 +830,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
         df = cluster_birch(df, weight, save_plot=save_plot_birch, n_clusters=n_clusters)
         group_by = 'cluster'
         df['n_in_cluster'] = df.groupby('cluster')['cluster'].transform(len)
-        print(df.sort_values('n_in_cluster').groupby('cluster', sort=False).size().cumsum())
+        # print(df.sort_values('n_in_cluster').groupby('cluster', sort=False).size().cumsum())
 
     # Color by attribute
     if color_by is not None:
@@ -821,7 +862,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     # Apply threshold/topk/cca on weight
     if isinstance(threshold, (int, float, complex)):
         df = df.loc[df[weight].abs() >= threshold]  # thrown here?
-        print((df[weight].abs() >= threshold).sum())
+        # print((df[weight].abs() >= threshold).sum())
     elif isinstance(threshold, str):
         if threshold in df.columns:
             df = df.loc[df[weight].abs() >= df[threshold]]  # here?
@@ -832,7 +873,7 @@ def draw(df, selection='polymer', group_by=None, color_by=None,
     if topk:
         df = df.loc[df[weight].abs().sort_values(ascending=False).
                     head(n=topk).index]  # here?
-        print(df[weight].abs().min())
+        # print(df[weight].abs().min())
     if cca:
         group_compo = True
         if not color_sign:
