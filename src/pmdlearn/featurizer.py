@@ -100,8 +100,11 @@ class MDFeaturizer():
         Selection of atoms to featurize backbone dihedral angles"""
 
         # self.features_name = 'phi_psi'
-        r = Ramachandran(self.universe.select_atoms(selection)[self.slice],
-                         check_protein=False).run()
+        r = Ramachandran(self.universe.select_atoms(selection),
+                                check_protein=False).run(
+                                        start=self.slice.start,
+                                        stop=self.slice.stop,
+                                        step=self.slice.step)
         cos = np.cos(np.radians(r.results.angles))
         sin = np.sin(np.radians(r.results.angles))
         values = np.concatenate([cos, sin], axis=2)
