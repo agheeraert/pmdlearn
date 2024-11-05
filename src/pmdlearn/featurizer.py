@@ -47,14 +47,19 @@ class MDFeaturizer():
     """
 
     def __init__(self, topo, traj=None, begin=None, end=None, stride=None,
-                 label=None, replica=None, align=True):
+                 label=None, replica=None, align=False):
         self.traj = traj
         self.topo = topo
         self.slice = slice(begin, end, stride)
         self.label = label
         self.replica = replica
-        if align:
+        if align==True:
             self.universe = self._align()
+        elif align:
+            if not isinstance(align, list):
+                align = [align]
+            for selection in align:
+                self.universe = self._align(selection)
         else:
             if self.traj is None:
                 self.universe = mda.Universe(self.topo)
@@ -64,7 +69,7 @@ class MDFeaturizer():
         self.n_frames = len(self.universe.trajectory[self.slice])
         self.n_residues = len(self.universe.residues)
 
-    def _align(self):
+    def _align(self, selection="backbone"):
         """Aligns trajectories before featurization. Please note this step is
         long and useless when featurizing internal features."""
         if self.traj is not None:
@@ -74,7 +79,7 @@ class MDFeaturizer():
             mobile = mda.Universe(topology=self.topo)
             ref = mda.Universe(topology=self.topo)
         aligner = align.AlignTraj(mobile, ref,
-                                  select="backbone").run()
+                                  select=selection).run()
         return mobile
 
     def atomic_displacements(self, selection="name CA"):
