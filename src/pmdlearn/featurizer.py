@@ -94,8 +94,10 @@ class MDFeaturizer():
         avg = np.average(values, axis=0)
         values -= avg
         indices = self.universe.select_atoms(selection).residues.resindices
-        return MultiFeatures(values, indices, 'atomic_positions', self.label,
+        mf = MultiFeatures(values, indices, 'atomic_positions', self.label,
                              self.replica, descriptor_labels=['x', 'y', 'z'])
+        mf.average = avg
+        return mf
 
     def backbone_dihedrals(self, selection="protein"):
         """Featurize phi and psi backbone dihedral angles
